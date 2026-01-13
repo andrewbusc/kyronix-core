@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: kyronix
+      POSTGRES_PASSWORD: kyronix
+      POSTGRES_DB: kyronix_core
+    volumes:
+      - kyronix_db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    env_file:
+      - ./frontend/.env
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+volumes:
+  kyronix_db:
+  frontend_node_modules:
