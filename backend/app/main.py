@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.routes import auth, documents, paystub_generate, paystubs, users
 from app.core.config import settings
@@ -7,6 +8,8 @@ from app.core.config import settings
 app = FastAPI(title=settings.project_name)
 
 allowed_origins = [origin.strip() for origin in settings.allow_origins.split(",") if origin.strip()]
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.add_middleware(
     CORSMiddleware,
