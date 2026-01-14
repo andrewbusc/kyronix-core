@@ -1,4 +1,12 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const envApiUrl = import.meta.env.VITE_API_URL as string | undefined;
+const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+const normalizedEnvApiUrl =
+  envApiUrl && isHttps ? envApiUrl.replace(/^http:/, "https:") : envApiUrl;
+const inferredApiUrl =
+  typeof window !== "undefined" && window.location.hostname === "core.kyronix.ai"
+    ? "https://api.core.kyronix.ai"
+    : "http://localhost:8000";
+const API_URL = normalizedEnvApiUrl || inferredApiUrl;
 
 function getToken() {
   return localStorage.getItem("kc_token");
