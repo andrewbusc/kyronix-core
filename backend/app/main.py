@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, documents, paystub_generate, paystubs, users
+from app.api.routes import auth, documents, paystub_generate, paystubs, users, verification_requests
 from app.core.config import settings
 
 app = FastAPI(title=settings.project_name)
@@ -40,6 +40,9 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])
 app.include_router(paystubs.router, prefix="/api/paystubs", tags=["paystubs"])
+app.include_router(
+    verification_requests.router, prefix="/api/verification-requests", tags=["verification"]
+)
 app.include_router(
     paystub_generate.router, prefix="/api/v1/paystubs", tags=["paystub-generator"]
 )

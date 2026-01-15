@@ -5,6 +5,8 @@ from app.db.models.password_reset_token import PasswordResetToken
 from app.db.models.paystub import Paystub
 from app.db.models.paystub_audit_log import PaystubAuditLog
 from app.db.models.paystub_generation_log import PaystubGenerationLog
+from app.db.models.employment_verification_request import EmploymentVerificationRequest
+from app.db.models.employment_verification_audit_log import EmploymentVerificationAuditLog
 
 __all__ = [
     "User",
@@ -14,4 +16,6 @@ __all__ = [
     "Paystub",
     "PaystubAuditLog",
     "PaystubGenerationLog",
+    "EmploymentVerificationRequest",
+    "EmploymentVerificationAuditLog",
 ]

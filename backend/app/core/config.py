@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     time_zone: str = "America/Los_Angeles"
     document_output_format: str = "pdf"
     environment: str = "development"
+    company_address: str = "28 Geary St Suite 650 San Francisco, CA 94108"
+    payroll_contact_email: str = "hr@kyronix.ai"
 
     database_url: str = "postgresql+psycopg2://kyronix:kyronix@db:5432/kyronix_core"
     secret_key: str = "change-me"

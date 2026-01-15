@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { createUser, listUsers } from "../../api/client";
+import { createUser, deleteUser, listUsers } from "../../api/client";
 import type { User } from "../../App";
 
 type CreateUserPayload = {
@@ -108,6 +108,23 @@ export default function AdminEmployees() {
     }
   };
 
+  const handleDeleteUser = async (entry: User) => {
+    const displayName = `${entry.legal_first_name} ${entry.legal_last_name}`.trim();
+    const confirmed = window.confirm(
+      `Delete ${displayName}? This will remove the employee and their data.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setError(null);
+    try {
+      await deleteUser(entry.id);
+      await fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete user");
+    }
+  };
+
   return (
     <>
       {error && <div className="card">{error}</div>}
@@ -139,7 +156,16 @@ export default function AdminEmployees() {
                     )}`}
                   </div>
                 </div>
-                <span className="pill">{entry.is_active ? "Enabled" : "Disabled"}</span>
+                <div className="row" style={{ alignItems: "center", justifyContent: "flex-end" }}>
+                  <span className="pill">{entry.is_active ? "Enabled" : "Disabled"}</span>
+                  <button
+                    className="button secondary"
+                    style={{ borderColor: "rgba(154, 74, 20, 0.4)", color: "#9a4a14" }}
+                    onClick={() => handleDeleteUser(entry)}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))}

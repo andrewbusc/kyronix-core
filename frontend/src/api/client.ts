@@ -156,3 +156,62 @@ export async function createUser(payload: {
   });
   return response.json();
 }
+
+export async function deleteUser(userId: number) {
+  await apiRequest(`/api/users/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listVerificationRequests() {
+  const response = await apiRequest("/api/verification-requests");
+  return response.json();
+}
+
+export async function createVerificationRequest(payload: {
+  verifier_name: string;
+  verifier_company?: string | null;
+  verifier_email: string;
+  purpose: string;
+  include_salary: boolean;
+  consent: boolean;
+}) {
+  const response = await apiRequest("/api/verification-requests", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
+export async function generateVerificationRequest(requestId: number, salaryAmount?: number) {
+  const response = await apiRequest(`/api/verification-requests/${requestId}/generate`, {
+    method: "POST",
+    body: JSON.stringify({ salary_amount: salaryAmount ?? null }),
+  });
+  const blob = await response.blob();
+  const filename = getFileNameFromDisposition(response.headers.get("Content-Disposition"));
+  return { blob, filename };
+}
+
+export async function markVerificationSent(requestId: number, sentNote?: string) {
+  const response = await apiRequest(`/api/verification-requests/${requestId}/mark-sent`, {
+    method: "POST",
+    body: JSON.stringify({ sent_note: sentNote || null }),
+  });
+  return response.json();
+}
+
+export async function declineVerificationRequest(requestId: number, declineReason?: string) {
+  const response = await apiRequest(`/api/verification-requests/${requestId}/decline`, {
+    method: "POST",
+    body: JSON.stringify({ decline_reason: declineReason || null }),
+  });
+  return response.json();
+}
+
+export async function downloadVerificationPdf(requestId: number) {
+  const response = await apiRequest(`/api/verification-requests/${requestId}/pdf`);
+  const blob = await response.blob();
+  const filename = getFileNameFromDisposition(response.headers.get("Content-Disposition"));
+  return { blob, filename };
+}

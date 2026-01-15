@@ -3,6 +3,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.db.models.audit_log import DocumentAuditLog
+from app.db.models.employment_verification_audit_log import EmploymentVerificationAuditLog
 from app.db.models.paystub_audit_log import PaystubAuditLog
 from app.db.models.paystub_generation_log import PaystubGenerationLog
 
@@ -105,3 +106,44 @@ def log_paystub_generation_event(
     db.add(record)
     if commit:
         db.commit()
+
+
+def log_verification_event(
+    db: Session,
+    *,
+    user_id: int,
+    request_id: int,
+    event_type: str,
+    metadata: dict[str, Any] | None = None,
+    commit: bool = True,
+) -> None:
+    record = EmploymentVerificationAuditLog(
+        user_id=user_id,
+        request_id=request_id,
+        event_type=event_type,
+        event_metadata=metadata or {},
+    )
+    db.add(record)
+    if commit:
+        db.commit()
+
+
+def log_verification_events(
+    db: Session,
+    *,
+    user_id: int,
+    request_ids: list[int],
+    event_type: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    records = [
+        EmploymentVerificationAuditLog(
+            user_id=user_id,
+            request_id=request_id,
+            event_type=event_type,
+            event_metadata=metadata or {},
+        )
+        for request_id in request_ids
+    ]
+    db.add_all(records)
+    db.commit()
