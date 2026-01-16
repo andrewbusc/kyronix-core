@@ -103,6 +103,12 @@ export async function downloadDocumentPdf(docId: number) {
   return { blob, filename };
 }
 
+export async function deleteDocument(docId: number) {
+  await apiRequest(`/api/documents/${docId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function listPaystubs(year?: number) {
   const params = year ? `?year=${year}` : "";
   const response = await apiRequest(`/api/paystubs${params}`);

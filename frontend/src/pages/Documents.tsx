@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import {
   createVerificationRequest,
+  deleteDocument,
   downloadDocumentPdf,
   downloadVerificationPdf,
   getDocument,
@@ -134,6 +135,17 @@ export default function Documents() {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+  };
+
+  const handleDelete = async (doc: Document) => {
+    const confirmed = window.confirm(`Delete "${doc.title}"? This cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      await deleteDocument(doc.id);
+      await refreshDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete document");
+    }
   };
 
   const handleVerificationSubmit = async () => {
@@ -390,6 +402,9 @@ export default function Documents() {
                     </button>
                     <button className="button" onClick={() => handleDownload(doc)}>
                       Download PDF
+                    </button>
+                    <button className="button secondary" onClick={() => handleDelete(doc)}>
+                      Delete
                     </button>
                   </div>
                 </div>

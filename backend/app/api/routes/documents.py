@@ -12,7 +12,7 @@ from app.db.models.document_share import DocumentShare
 from app.db.models.user import User
 from app.schemas.document import DocumentCreate, DocumentRead, DocumentShareCreate, DocumentShareRead
 from app.utils.pdf import render_document_pdf
-from app.utils.s3 import S3ConfigError, download_pdf_bytes
+from app.utils.s3 import S3ConfigError, delete_pdf_bytes, download_pdf_bytes
 
 router = APIRouter()
 
@@ -140,6 +140,29 @@ def get_document_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    document = get_document_or_404(db, doc_id, current_user)
+    if current_user.employment_status == EmploymentStatus.FORMER_EMPLOYEE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access")
+
+    if document.s3_key:
+        try:
+            delete_pdf_bytes(document.s3_key)
+        except S3ConfigError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+            ) from exc
+
+    db.delete(document)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{doc_id}/shares", response_model=DocumentShareRead, status_code=status.HTTP_201_CREATED)

@@ -172,7 +172,7 @@ def render_employment_verification_pdf(
                 height=logo_height,
                 mask="auto",
             )
-            y -= logo_height + (line_height * 1.5)
+            y -= logo_height + (line_height * 2.8)
         except Exception:
             pass
 
