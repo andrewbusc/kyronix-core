@@ -8,6 +8,7 @@ from reportlab.pdfgen import canvas
 
 from app.core.config import settings
 from app.schemas.paystub_generate import PaystubGenerateRequest
+from app.utils.pdf import draw_paystub_style_footer
 
 
 def _format_currency(value: Decimal) -> str:
@@ -60,18 +61,16 @@ def render_paystub_v1_pdf(payload: PaystubGenerateRequest) -> bytes:
     content_right = page_width - margin
     footer_height = 72
 
-    generated_at = payload.metadata.generated_timestamp
-    if generated_at.tzinfo is None:
-        generated_at = generated_at.replace(tzinfo=timezone.utc)
-    generated_at = generated_at.astimezone(timezone.utc)
-    generated_stamp = generated_at.strftime("%Y-%m-%d %H:%M:%S UTC")
-
     def draw_footer():
-        c.setFont("Helvetica", 8)
-        c.setFillColorRGB(0, 0, 0)
-        c.line(margin, footer_height, content_right, footer_height)
-        c.drawString(margin, footer_height - 14, "This document was generated electronically via Kyronix Core.")
-        c.drawString(margin, footer_height - 28, f"Generated on: {generated_stamp}")
+        generated_at = payload.metadata.generated_timestamp
+        draw_paystub_style_footer(
+            c,
+            margin=margin,
+            footer_height=footer_height,
+            generated_at=generated_at,
+            tz=timezone.utc,
+            tz_label="UTC",
+        )
 
     def draw_header():
         y = page_height - margin

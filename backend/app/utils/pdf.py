@@ -1,11 +1,39 @@
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from app.core.config import settings
+
+
+def draw_paystub_style_footer(
+    c: canvas.Canvas,
+    *,
+    margin: float,
+    footer_height: float,
+    generated_at: datetime,
+    tz: ZoneInfo | None = None,
+    tz_label: str = "UTC",
+) -> None:
+    footer_time = generated_at
+    if footer_time.tzinfo is None:
+        footer_time = footer_time.replace(tzinfo=tz or timezone.utc)
+    if tz is not None:
+        footer_time = footer_time.astimezone(tz)
+    stamp = f"{footer_time.strftime('%Y-%m-%d %H:%M:%S')} {tz_label}"
+
+    page_width = c._pagesize[0]
+    c.setFont("Helvetica", 8)
+    c.setFillColorRGB(0, 0, 0)
+    c.line(margin, footer_height, page_width - margin, footer_height)
+    c.drawString(
+        margin,
+        footer_height - 14,
+        "This document was generated electronically via Kyronix Core.",
+    )
+    c.drawString(margin, footer_height - 28, f"Generated on: {stamp}")
 
 
 def render_document_pdf(document) -> bytes:
@@ -52,13 +80,6 @@ def render_paystub_pdf(paystub) -> bytes:
 
     page_width, page_height = letter
     now = datetime.now(ZoneInfo(settings.time_zone))
-    host = settings.base_url.replace("https://", "").replace("http://", "")
-    footer_text = (
-        f"{settings.employer_legal_name} | Generated via {settings.project_name} ({host}) | "
-        f"Generated on: {now.strftime('%Y-%m-%d %H:%M:%S')} PT"
-    )
-    footer_notice = "This document was generated electronically via Kyronix Core."
-
     earnings = paystub.earnings or []
     deductions = paystub.deductions or []
 
@@ -84,11 +105,14 @@ def render_paystub_pdf(paystub) -> bytes:
     y = page_height - 72
 
     def draw_footer():
-        c.setFont("Helvetica", 9)
-        c.setFillColorRGB(0.2, 0.2, 0.2)
-        c.drawString(x_left, 36, footer_text)
-        c.drawString(x_left, 24, footer_notice)
-        c.setFillColorRGB(0, 0, 0)
+        draw_paystub_style_footer(
+            c,
+            margin=x_left,
+            footer_height=72,
+            generated_at=now,
+            tz=ZoneInfo(settings.time_zone),
+            tz_label="PT",
+        )
 
     def draw_header(title_suffix=""):
         nonlocal y

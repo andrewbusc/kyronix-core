@@ -12,6 +12,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from app.core.config import settings
+from app.utils.pdf import draw_paystub_style_footer
 
 _REGISTERED_FONTS: set[str] = set()
 
@@ -245,22 +246,14 @@ def render_employment_verification_pdf(
     if settings.verification_signer_title:
         c.drawString(x_left, y, settings.verification_signer_title)
 
-    footer_y = 36
-    host = settings.base_url.replace("https://", "").replace("http://", "")
-    footer_time = generated_at
-    if footer_time.tzinfo is None:
-        footer_time = footer_time.replace(tzinfo=ZoneInfo(settings.time_zone))
-    footer_text = (
-        f"{settings.employer_legal_name} | Generated via {settings.project_name} ({host}) | "
-        f"Generated on: {footer_time.strftime('%Y-%m-%d %H:%M:%S')} PT"
+    draw_paystub_style_footer(
+        c,
+        margin=x_left,
+        footer_height=72,
+        generated_at=generated_at,
+        tz=ZoneInfo(settings.time_zone),
+        tz_label="PT",
     )
-    footer_notice = "This document was generated electronically via Kyronix Core."
-
-    c.setFont("Helvetica", 9)
-    c.setFillColorRGB(0.2, 0.2, 0.2)
-    c.drawString(x_left, footer_y, footer_text)
-    c.drawString(x_left, footer_y - 12, footer_notice)
-    c.setFillColorRGB(0, 0, 0)
 
     c.showPage()
     c.save()
