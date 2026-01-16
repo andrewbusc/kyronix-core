@@ -244,34 +244,17 @@ def render_employment_verification_pdf(
     if settings.verification_signer_title:
         c.drawString(x_left, y, settings.verification_signer_title)
 
-    footer_address = settings.verification_footer_address or settings.company_address
-    footer_phone = settings.verification_phone
-    footer_fax = settings.verification_fax
-    footer_email = contact_email
-
     footer_y = 36
-    c.setFont(footer_font, 9)
-    c.drawCentredString(
-        page_width / 2,
-        footer_y + 36,
-        "This document was generated electronically via Kyronix Core.",
+    host = settings.base_url.replace("https://", "").replace("http://", "")
+    footer_text = (
+        f"{settings.employer_legal_name} | Generated via {settings.project_name} ({host}) | "
+        f"Generated on: {generated_at.strftime('%Y-%m-%d %H:%M:%S')} PT"
     )
-    if footer_address:
-        _draw_centered_star_line(
-            c,
-            page_width / 2,
-            footer_y + 24,
-            footer_address,
-            footer_font,
-            9,
-        )
-    if footer_phone:
-        phone_fax = f"Phone {footer_phone}"
-        if footer_fax:
-            phone_fax = f"{phone_fax} * Fax {footer_fax}"
-        _draw_centered_star_line(c, page_width / 2, footer_y + 12, phone_fax, footer_font, 9)
-    if footer_email:
-        c.drawCentredString(page_width / 2, footer_y, footer_email)
+    footer_notice = "This document was generated electronically via Kyronix Core."
+
+    c.setFont(footer_font, 9)
+    c.drawString(x_left, footer_y + 12, footer_text)
+    c.drawString(x_left, footer_y, footer_notice)
 
     c.showPage()
     c.save()
