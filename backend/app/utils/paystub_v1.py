@@ -68,8 +68,8 @@ def render_paystub_v1_pdf(payload: PaystubGenerateRequest) -> bytes:
             margin=margin,
             footer_height=footer_height,
             generated_at=generated_at,
-            tz=timezone.utc,
-            tz_label="UTC",
+            tz=ZoneInfo(settings.time_zone),
+            tz_label="PT",
         )
 
     def draw_header():
