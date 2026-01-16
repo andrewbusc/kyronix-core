@@ -6,3 +6,8 @@ class VerificationRequestStatus(str, Enum):
     GENERATED = "GENERATED"
     SENT = "SENT"
     DECLINED = "DECLINED"
+
+
+class VerificationDeliveryMethod(str, Enum):
+    VERIFIER = "VERIFIER"
+    EMPLOYEE = "EMPLOYEE"

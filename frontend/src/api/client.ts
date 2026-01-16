@@ -99,7 +99,8 @@ export async function getDocument(docId: number) {
 export async function downloadDocumentPdf(docId: number) {
   const response = await apiRequest(`/api/documents/${docId}/pdf`);
   const blob = await response.blob();
-  return blob;
+  const filename = getFileNameFromDisposition(response.headers.get("Content-Disposition"));
+  return { blob, filename };
 }
 
 export async function listPaystubs(year?: number) {
@@ -225,10 +226,17 @@ export async function createVerificationRequest(payload: {
   return response.json();
 }
 
-export async function generateVerificationRequest(requestId: number, salaryAmount?: number) {
+export async function generateVerificationRequest(
+  requestId: number,
+  salaryAmount?: number,
+  deliveryMethod: "VERIFIER" | "EMPLOYEE" = "VERIFIER"
+) {
   const response = await apiRequest(`/api/verification-requests/${requestId}/generate`, {
     method: "POST",
-    body: JSON.stringify({ salary_amount: salaryAmount ?? null }),
+    body: JSON.stringify({
+      salary_amount: salaryAmount ?? null,
+      delivery_method: deliveryMethod,
+    }),
   });
   const blob = await response.blob();
   const filename = getFileNameFromDisposition(response.headers.get("Content-Disposition"));

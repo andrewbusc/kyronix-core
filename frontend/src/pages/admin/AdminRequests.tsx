@@ -16,6 +16,8 @@ type VerificationRequest = {
   purpose: string;
   include_salary: boolean;
   status: "PENDING" | "GENERATED" | "SENT" | "DECLINED";
+  delivery_method?: "VERIFIER" | "EMPLOYEE";
+  document_id?: number | null;
   created_at?: string | null;
   generated_at?: string | null;
   sent_at?: string | null;
@@ -40,6 +42,9 @@ export default function AdminRequests() {
   const [salaryInputs, setSalaryInputs] = useState<Record<number, string>>({});
   const [sentNotes, setSentNotes] = useState<Record<number, string>>({});
   const [declineReasons, setDeclineReasons] = useState<Record<number, string>>({});
+  const [deliveryMethods, setDeliveryMethods] = useState<
+    Record<number, "VERIFIER" | "EMPLOYEE">
+  >({});
 
   const sortedRequests = useMemo(() => {
     return [...requests].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
@@ -81,7 +86,12 @@ export default function AdminRequests() {
       const salaryValue = salaryInputs[request.id];
       const salaryAmount =
         request.include_salary && salaryValue ? Number.parseFloat(salaryValue) : undefined;
-      const { blob, filename } = await generateVerificationRequest(request.id, salaryAmount);
+      const deliveryMethod = deliveryMethods[request.id] || "VERIFIER";
+      const { blob, filename } = await generateVerificationRequest(
+        request.id,
+        salaryAmount,
+        deliveryMethod
+      );
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -178,60 +188,85 @@ export default function AdminRequests() {
                 <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
                   {request.include_salary ? "Salary disclosure requested." : "Salary disclosure not requested."}
                 </div>
-                  {request.include_salary && request.status === "PENDING" && (
-                    <div style={{ marginTop: 12 }}>
-                      <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                        Annual base salary
+                {request.document_id && (
+                  <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                    Saved to employee documents.
+                  </div>
+                )}
+                {request.include_salary && request.status === "PENDING" && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                      Annual base salary
                       <input
                         className="input"
                         placeholder="0.00"
-                          value={salaryInputs[request.id] || ""}
-                          onChange={(event) =>
-                            setSalaryInputs({
-                              ...salaryInputs,
-                              [request.id]: event.target.value,
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
-                  )}
-                  {request.include_salary &&
-                    request.status !== "PENDING" &&
-                    request.salary_amount !== null &&
-                    request.salary_amount !== undefined && (
-                      <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                        {`Salary on record: $${request.salary_amount.toLocaleString()}`}
-                      </div>
-                    )}
-                  {request.status === "PENDING" && (
-                    <div style={{ marginTop: 12 }}>
-                      <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                        Decline reason (optional)
-                        <input
-                          className="input"
-                          placeholder="Reason for decline"
-                          value={declineReasons[request.id] || ""}
-                          onChange={(event) =>
-                            setDeclineReasons({
-                              ...declineReasons,
-                              [request.id]: event.target.value,
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
-                  )}
-                  {request.status === "DECLINED" && request.decline_reason && (
+                        value={salaryInputs[request.id] || ""}
+                        onChange={(event) =>
+                          setSalaryInputs({
+                            ...salaryInputs,
+                            [request.id]: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                )}
+                {request.include_salary &&
+                  request.status !== "PENDING" &&
+                  request.salary_amount !== null &&
+                  request.salary_amount !== undefined && (
                     <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                      {`Declined: ${request.decline_reason}`}
+                      {`Salary on record: $${request.salary_amount.toLocaleString()}`}
                     </div>
                   )}
-                  {request.status !== "PENDING" && request.sent_note && (
-                    <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                      {`Sent note: ${request.sent_note}`}
-                    </div>
-                  )}
+                {request.status === "PENDING" && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                      Delivery method
+                      <select
+                        className="input"
+                        value={deliveryMethods[request.id] || "VERIFIER"}
+                        onChange={(event) =>
+                          setDeliveryMethods({
+                            ...deliveryMethods,
+                            [request.id]: event.target.value as "VERIFIER" | "EMPLOYEE",
+                          })
+                        }
+                      >
+                        <option value="VERIFIER">Send directly to verifier</option>
+                        <option value="EMPLOYEE">Make available in employee documents</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+                {request.status === "PENDING" && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                      Decline reason (optional)
+                      <input
+                        className="input"
+                        placeholder="Reason for decline"
+                        value={declineReasons[request.id] || ""}
+                        onChange={(event) =>
+                          setDeclineReasons({
+                            ...declineReasons,
+                            [request.id]: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                )}
+                {request.status === "DECLINED" && request.decline_reason && (
+                  <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                    {`Declined: ${request.decline_reason}`}
+                  </div>
+                )}
+                {request.status !== "PENDING" && request.sent_note && (
+                  <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                    {`Sent note: ${request.sent_note}`}
+                  </div>
+                )}
                 <div className="row" style={{ marginTop: 12 }}>
                   {request.status === "PENDING" && (
                     <button className="button" onClick={() => handleGenerate(request)}>
@@ -248,26 +283,30 @@ export default function AdminRequests() {
                   )}
                   {request.status === "GENERATED" && (
                     <>
-                      <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                        Send note (optional)
-                        <input
-                          className="input"
-                          placeholder="Notes about delivery"
-                          value={sentNotes[request.id] || ""}
-                          onChange={(event) =>
-                            setSentNotes({
-                              ...sentNotes,
-                              [request.id]: event.target.value,
-                            })
-                          }
-                        />
-                      </label>
-                      <button
-                        className="button secondary"
-                        onClick={() => handleMarkSent(request.id)}
-                      >
-                        Mark sent
-                      </button>
+                      {request.delivery_method !== "EMPLOYEE" && (
+                        <>
+                          <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                            Send note (optional)
+                            <input
+                              className="input"
+                              placeholder="Notes about delivery"
+                              value={sentNotes[request.id] || ""}
+                              onChange={(event) =>
+                                setSentNotes({
+                                  ...sentNotes,
+                                  [request.id]: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <button
+                            className="button secondary"
+                            onClick={() => handleMarkSent(request.id)}
+                          >
+                            Mark sent
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                   {request.status === "PENDING" && (

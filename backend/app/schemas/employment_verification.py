@@ -3,7 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.roles import EmploymentStatus
-from app.core.verification import VerificationRequestStatus
+from app.core.verification import VerificationDeliveryMethod, VerificationRequestStatus
 
 
 class EmploymentVerificationRequestCreate(BaseModel):
@@ -17,6 +17,7 @@ class EmploymentVerificationRequestCreate(BaseModel):
 
 class EmploymentVerificationGenerate(BaseModel):
     salary_amount: float | None = None
+    delivery_method: VerificationDeliveryMethod = VerificationDeliveryMethod.VERIFIER
 
 
 class EmploymentVerificationMarkSent(BaseModel):
@@ -47,6 +48,7 @@ class EmploymentVerificationRequestRead(BaseModel):
     include_salary: bool
     consent: bool
     status: VerificationRequestStatus
+    delivery_method: VerificationDeliveryMethod
     salary_amount: float | None = None
     generated_by_user_id: int | None = None
     created_at: datetime | None = None
@@ -58,6 +60,7 @@ class EmploymentVerificationRequestRead(BaseModel):
     declined_at: datetime | None = None
     declined_by_user_id: int | None = None
     decline_reason: str | None = None
+    document_id: int | None = None
     file_name: str | None = None
     employee: EmploymentVerificationEmployee | None = None
 

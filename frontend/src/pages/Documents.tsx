@@ -25,6 +25,8 @@ type VerificationRequest = {
   include_salary: boolean;
   consent: boolean;
   status: "PENDING" | "GENERATED" | "SENT" | "DECLINED";
+  delivery_method?: "VERIFIER" | "EMPLOYEE";
+  document_id?: number | null;
   created_at?: string | null;
   generated_at?: string | null;
   sent_at?: string | null;
@@ -121,11 +123,11 @@ export default function Documents() {
   };
 
   const handleDownload = async (doc: Document) => {
-    const blob = await downloadDocumentPdf(doc.id);
+    const { blob, filename } = await downloadDocumentPdf(doc.id);
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = getSafeFileName(doc.title);
+    link.download = filename || getSafeFileName(doc.title);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -193,8 +195,8 @@ export default function Documents() {
           <div>
             <h2 style={{ margin: 0 }}>Employment verification</h2>
             <p style={{ marginTop: 6, color: "rgba(11, 31, 42, 0.6)" }}>
-              Submit a request for a verification letter. HR will send it directly to the
-              verifier.
+              Submit a request for a verification letter. HR can send it directly to the
+              verifier or make it available in your documents.
             </p>
           </div>
         </div>
@@ -311,6 +313,11 @@ export default function Documents() {
                     ? "Salary disclosure requested."
                     : "Salary disclosure not requested."}
                 </div>
+                {request.document_id && (
+                  <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                    Saved to your Documents.
+                  </div>
+                )}
                 {request.status === "DECLINED" && request.decline_reason && (
                   <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
                     {`Reason: ${request.decline_reason}`}

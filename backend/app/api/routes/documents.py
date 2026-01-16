@@ -12,6 +12,7 @@ from app.db.models.document_share import DocumentShare
 from app.db.models.user import User
 from app.schemas.document import DocumentCreate, DocumentRead, DocumentShareCreate, DocumentShareRead
 from app.utils.pdf import render_document_pdf
+from app.utils.s3 import S3ConfigError, download_pdf_bytes
 
 router = APIRouter()
 
@@ -117,7 +118,16 @@ def get_document_pdf(
     current_user: User = Depends(get_current_user),
 ):
     document = get_document_or_404(db, doc_id, current_user)
-    pdf_bytes = render_document_pdf(document)
+    filename = document.file_name or f"document_{document.id}.pdf"
+    if document.s3_key:
+        try:
+            pdf_bytes = download_pdf_bytes(document.s3_key)
+        except S3ConfigError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+            ) from exc
+    else:
+        pdf_bytes = render_document_pdf(document)
     log_document_event(
         db,
         user_id=current_user.id,
@@ -125,11 +135,10 @@ def get_document_pdf(
         event_type="document_generation",
         metadata={"format": "pdf"},
     )
-    filename = f"document_{document.id}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -224,10 +233,18 @@ def download_shared_document(token: str, db: Session = Depends(get_db)):
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    pdf_bytes = render_document_pdf(document)
-    filename = f"document_{document.id}.pdf"
+    filename = document.file_name or f"document_{document.id}.pdf"
+    if document.s3_key:
+        try:
+            pdf_bytes = download_pdf_bytes(document.s3_key)
+        except S3ConfigError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+            ) from exc
+    else:
+        pdf_bytes = render_document_pdf(document)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

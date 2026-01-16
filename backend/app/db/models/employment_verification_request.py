@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.sql import func
 
-from app.core.verification import VerificationRequestStatus
+from app.core.verification import VerificationDeliveryMethod, VerificationRequestStatus
 from app.db.base import Base
 
 
@@ -31,6 +31,11 @@ class EmploymentVerificationRequest(Base):
         nullable=False,
         default=VerificationRequestStatus.PENDING,
     )
+    delivery_method = Column(
+        Enum(VerificationDeliveryMethod, name="verification_delivery_method_enum"),
+        nullable=False,
+        default=VerificationDeliveryMethod.VERIFIER,
+    )
     salary_amount = Column(Numeric(12, 2), nullable=True)
     generated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     generated_at = Column(DateTime(timezone=True), nullable=True)
@@ -40,6 +45,7 @@ class EmploymentVerificationRequest(Base):
     declined_at = Column(DateTime(timezone=True), nullable=True)
     declined_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     decline_reason = Column(Text, nullable=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
     file_name = Column(String, nullable=True)
     s3_key = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
