@@ -267,6 +267,11 @@ def render_employment_verification_pdf(
         _draw_centered_star_line(c, page_width / 2, footer_y + 12, phone_fax, footer_font, 9)
     if footer_email:
         c.drawCentredString(page_width / 2, footer_y, footer_email)
+    c.drawCentredString(
+        page_width / 2,
+        footer_y - 12,
+        "This document was generated electronically via Kyronix Core.",
+    )
 
     c.showPage()
     c.save()
