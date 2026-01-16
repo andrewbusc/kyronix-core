@@ -1,9 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { generatePaystubPdf, listUsers } from "../../api/client";
+import {
+  deletePaystub,
+  downloadPaystubPdf,
+  generatePaystubPdf,
+  listPaystubsForUser,
+  listUsers,
+  uploadPaystub,
+} from "../../api/client";
 import type { User } from "../../App";
 
 type PayType = "SALARY" | "HOURLY" | "CONTRACTOR";
+
+type PaystubSummary = {
+  id: number;
+  pay_date: string;
+  pay_period_start: string;
+  pay_period_end: string;
+  file_name: string;
+};
+
+type PaystubListResponse = {
+  items: PaystubSummary[];
+  available_years: number[];
+};
 
 type EarningsLine = {
   description: string;
@@ -166,6 +186,18 @@ export default function AdminPaystubs() {
   const [status, setStatus] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyYear, setHistoryYear] = useState("all");
+  const [historyYears, setHistoryYears] = useState<number[]>([]);
+  const [paystubHistory, setPaystubHistory] = useState<PaystubSummary[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadPayDate, setUploadPayDate] = useState("");
+  const [uploadPeriodStart, setUploadPeriodStart] = useState("");
+  const [uploadPeriodEnd, setUploadPeriodEnd] = useState("");
+  const [uploadFileName, setUploadFileName] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   const [selectedUserId, setSelectedUserId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -237,6 +269,10 @@ export default function AdminPaystubs() {
   }, [selectedUserId, users]);
 
   useEffect(() => {
+    setHistoryYear("all");
+  }, [selectedUserId]);
+
+  useEffect(() => {
     if (payType === "CONTRACTOR") {
       setIncludeFederal(false);
       setIncludeSocialSecurity(false);
@@ -255,6 +291,14 @@ export default function AdminPaystubs() {
       setInclude401k(payType === "SALARY");
     }
   }, [payType]);
+
+  const historyYearValue = useMemo(() => {
+    if (historyYear === "all") {
+      return undefined;
+    }
+    const parsed = Number(historyYear);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }, [historyYear]);
 
   useEffect(() => {
     if (payType === "CONTRACTOR") {
@@ -281,6 +325,15 @@ export default function AdminPaystubs() {
     setPitRate(`${getPitEffectiveRate(taxableAnnual)}`);
     setSdiRate(`${STANDARD_SDI_RATE}`);
   }, [annualSalary, hourlyRate, payType, includeHealth, healthAmount, include401k, rate401k]);
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      setPaystubHistory([]);
+      setHistoryYears([]);
+      return;
+    }
+    fetchPaystubHistory(historyYearValue);
+  }, [selectedUserId, historyYearValue]);
 
   const computed = useMemo(() => {
     const warnings: string[] = [];
@@ -622,6 +675,96 @@ export default function AdminPaystubs() {
     rate401k,
   ]);
 
+  const fetchPaystubHistory = async (year?: number) => {
+    if (!selectedUserId) {
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const data = (await listPaystubsForUser(
+        Number(selectedUserId),
+        year
+      )) as PaystubListResponse;
+      setPaystubHistory(data.items);
+      setHistoryYears(data.available_years);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Unable to load paystubs");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleHistoryDownload = async (stub: PaystubSummary) => {
+    setHistoryError(null);
+    try {
+      const { blob, filename } = await downloadPaystubPdf(stub.id);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename || stub.file_name || "paystub.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Unable to download paystub");
+    }
+  };
+
+  const handleDeletePaystub = async (stub: PaystubSummary) => {
+    const confirmed = window.confirm(
+      `Delete paystub dated ${stub.pay_date}? This cannot be undone.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setHistoryError(null);
+    try {
+      await deletePaystub(stub.id);
+      await fetchPaystubHistory(historyYearValue);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Unable to delete paystub");
+    }
+  };
+
+  const handleUploadPaystub = async () => {
+    if (!selectedUserId) {
+      setUploadError("Select an employee before uploading.");
+      return;
+    }
+    if (!uploadFile) {
+      setUploadError("Select a PDF file to upload.");
+      return;
+    }
+    if (!uploadPayDate || !uploadPeriodStart || !uploadPeriodEnd) {
+      setUploadError("Complete all pay period dates.");
+      return;
+    }
+    setUploadError(null);
+    setUploading(true);
+    try {
+      await uploadPaystub({
+        userId: Number(selectedUserId),
+        pay_date: uploadPayDate,
+        pay_period_start: uploadPeriodStart,
+        pay_period_end: uploadPeriodEnd,
+        file: uploadFile,
+        file_name: uploadFileName || null,
+      });
+      setUploadPayDate("");
+      setUploadPeriodStart("");
+      setUploadPeriodEnd("");
+      setUploadFileName("");
+      setUploadFile(null);
+      await fetchPaystubHistory(historyYearValue);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Unable to upload paystub");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleGenerate = async () => {
     setError(null);
     setStatus(null);
@@ -730,6 +873,8 @@ export default function AdminPaystubs() {
   return (
     <>
       {error && <div className="card">{error}</div>}
+      {historyError && <div className="card">{historyError}</div>}
+      {uploadError && <div className="card">{uploadError}</div>}
       {status && <div className="card">{status}</div>}
       {computed.warnings.length > 0 && (
         <div className="card">
@@ -815,6 +960,134 @@ export default function AdminPaystubs() {
               />
             </label>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h3 style={{ marginTop: 0 }}>Paystub history</h3>
+            <p style={{ marginTop: 6, color: "rgba(11, 31, 42, 0.6)" }}>
+              Review uploaded and generated paystubs for the selected employee.
+            </p>
+          </div>
+          <div className="row" style={{ alignItems: "center" }}>
+            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+              Year
+              <select
+                className="input"
+                style={{ marginLeft: 8 }}
+                value={historyYear}
+                onChange={(event) => setHistoryYear(event.target.value)}
+                disabled={!selectedUserId}
+              >
+                <option value="all">All years</option>
+                {historyYears.map((year) => (
+                  <option key={year} value={String(year)}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="button secondary"
+              onClick={() => fetchPaystubHistory(historyYearValue)}
+              disabled={!selectedUserId || historyLoading}
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+        {!selectedUserId ? (
+          <p>Select an employee to view paystubs.</p>
+        ) : historyLoading ? (
+          <p>Loading paystubs...</p>
+        ) : paystubHistory.length === 0 ? (
+          <p>No paystubs available.</p>
+        ) : (
+          <div className="grid">
+            {paystubHistory.map((stub) => (
+              <div key={stub.id} className="card" style={{ padding: 16 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <strong>{`Pay date: ${stub.pay_date}`}</strong>
+                    <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                      {`Pay period: ${stub.pay_period_start} to ${stub.pay_period_end}`}
+                    </div>
+                  </div>
+                  <div className="row">
+                    <button className="button secondary" onClick={() => handleHistoryDownload(stub)}>
+                      Download
+                    </button>
+                    <button
+                      className="button secondary"
+                      style={{ borderColor: "rgba(154, 74, 20, 0.4)", color: "#9a4a14" }}
+                      onClick={() => handleDeletePaystub(stub)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Upload paystub PDF</h3>
+        <p style={{ marginTop: 6, color: "rgba(11, 31, 42, 0.6)" }}>
+          Attach an existing PDF to the selected employee.
+        </p>
+        <div className="grid">
+          <input
+            className="input"
+            type="file"
+            accept="application/pdf"
+            onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+          />
+          <div className="row">
+            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+              Pay period start
+              <input
+                className="input"
+                type="date"
+                value={uploadPeriodStart}
+                onChange={(event) => setUploadPeriodStart(event.target.value)}
+              />
+            </label>
+            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+              Pay period end
+              <input
+                className="input"
+                type="date"
+                value={uploadPeriodEnd}
+                onChange={(event) => setUploadPeriodEnd(event.target.value)}
+              />
+            </label>
+          </div>
+          <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+            Pay date
+            <input
+              className="input"
+              type="date"
+              value={uploadPayDate}
+              onChange={(event) => setUploadPayDate(event.target.value)}
+            />
+          </label>
+          <input
+            className="input"
+            placeholder="File name (optional)"
+            value={uploadFileName}
+            onChange={(event) => setUploadFileName(event.target.value)}
+          />
+          <button
+            className="button"
+            onClick={handleUploadPaystub}
+            disabled={!selectedUserId || uploading}
+          >
+            {uploading ? "Uploading..." : "Upload paystub"}
+          </button>
         </div>
       </div>
 

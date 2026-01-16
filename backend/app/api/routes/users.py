@@ -5,7 +5,8 @@ from app.api.deps import get_db, require_roles
 from app.core.roles import EmploymentStatus, RoleEnum
 from app.core.security import get_password_hash
 from app.db.models.user import User
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.auth import PasswordResetResponse
+from app.schemas.user import AdminPasswordReset, UserCreate, UserRead, UserUpdate
 
 router = APIRouter()
 
@@ -65,6 +66,59 @@ def list_users(
     return db.query(User).order_by(User.id).all()
 
 
+@router.patch("/{user_id}", response_model=UserRead)
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleEnum.ADMIN)),
+):
+    if current_user.employment_status == EmploymentStatus.FORMER_EMPLOYEE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access")
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if current_user.id == user_id:
+        if payload.role is not None and payload.role != user.role:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change your own role",
+            )
+        if payload.employment_status is not None and payload.employment_status != user.employment_status:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change your own employment status",
+            )
+        if payload.is_active is not None and payload.is_active != user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change your own active status",
+            )
+
+    if payload.email and payload.email != user.email:
+        existing = (
+            db.query(User)
+            .filter(User.email == payload.email, User.id != user_id)
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
+            )
+        user.email = payload.email
+
+    update_data = payload.model_dump(exclude_unset=True)
+    update_data.pop("email", None)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
@@ -85,3 +139,28 @@ def delete_user(
 
     db.delete(user)
     db.commit()
+
+
+@router.post("/{user_id}/reset-password", response_model=PasswordResetResponse)
+def reset_user_password(
+    user_id: int,
+    payload: AdminPasswordReset,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleEnum.ADMIN)),
+):
+    if current_user.employment_status == EmploymentStatus.FORMER_EMPLOYEE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access")
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    try:
+        user.hashed_password = get_password_hash(payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    db.add(user)
+    db.commit()
+
+    return PasswordResetResponse(message="Password reset successfully.")

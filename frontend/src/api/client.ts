@@ -6,7 +6,7 @@ const inferredApiUrl =
   typeof window !== "undefined" && window.location.hostname === "core.kyronix.ai"
     ? "https://api.core.kyronix.ai"
     : "http://localhost:8000";
-const API_URL = normalizedEnvApiUrl || inferredApiUrl;
+export const API_URL = normalizedEnvApiUrl || inferredApiUrl;
 
 function getToken() {
   return localStorage.getItem("kc_token");
@@ -18,7 +18,9 @@ async function apiRequest(path: string, options: RequestInit = {}) {
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  if (!headers.has("Content-Type") && options.body) {
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!headers.has("Content-Type") && options.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
   const response = await fetch(`${API_URL}${path}`, {
@@ -163,6 +165,46 @@ export async function deleteUser(userId: number) {
   });
 }
 
+export async function updateUser(
+  userId: number,
+  payload: {
+    email?: string | null;
+    legal_first_name?: string | null;
+    legal_last_name?: string | null;
+    preferred_name?: string | null;
+    job_title?: string | null;
+    department?: string | null;
+    hire_date?: string | null;
+    phone?: string | null;
+    address_line1?: string | null;
+    address_line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postal_code?: string | null;
+    country?: string | null;
+    emergency_contact_name?: string | null;
+    emergency_contact_phone?: string | null;
+    emergency_contact_relationship?: string | null;
+    role?: "EMPLOYEE" | "ADMIN";
+    employment_status?: "ACTIVE" | "FORMER_EMPLOYEE";
+    is_active?: boolean;
+  }
+) {
+  const response = await apiRequest(`/api/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
+export async function resetUserPassword(userId: number, newPassword: string) {
+  const response = await apiRequest(`/api/users/${userId}/reset-password`, {
+    method: "POST",
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+  return response.json();
+}
+
 export async function listVerificationRequests() {
   const response = await apiRequest("/api/verification-requests");
   return response.json();
@@ -214,4 +256,65 @@ export async function downloadVerificationPdf(requestId: number) {
   const blob = await response.blob();
   const filename = getFileNameFromDisposition(response.headers.get("Content-Disposition"));
   return { blob, filename };
+}
+
+export async function listDocumentShares(docId: number) {
+  const response = await apiRequest(`/api/documents/${docId}/shares`);
+  return response.json();
+}
+
+export async function createDocumentShare(docId: number, expiresAt?: string | null) {
+  const response = await apiRequest(`/api/documents/${docId}/shares`, {
+    method: "POST",
+    body: JSON.stringify({ expires_at: expiresAt || null }),
+  });
+  return response.json();
+}
+
+export async function revokeDocumentShare(docId: number, shareId: number) {
+  const response = await apiRequest(`/api/documents/${docId}/shares/${shareId}/revoke`, {
+    method: "POST",
+  });
+  return response.json();
+}
+
+export async function listPaystubsForUser(userId: number, year?: number) {
+  const params = new URLSearchParams();
+  params.set("user_id", String(userId));
+  if (year) {
+    params.set("year", String(year));
+  }
+  const query = params.toString();
+  const response = await apiRequest(`/api/paystubs?${query}`);
+  return response.json();
+}
+
+export async function uploadPaystub(payload: {
+  userId: number;
+  pay_date: string;
+  pay_period_start: string;
+  pay_period_end: string;
+  file: File;
+  file_name?: string | null;
+}) {
+  const form = new FormData();
+  form.set("user_id", String(payload.userId));
+  form.set("pay_date", payload.pay_date);
+  form.set("pay_period_start", payload.pay_period_start);
+  form.set("pay_period_end", payload.pay_period_end);
+  form.set("file", payload.file);
+  if (payload.file_name) {
+    form.set("file_name", payload.file_name);
+  }
+  const response = await apiRequest("/api/paystubs/upload", {
+    method: "POST",
+    body: form,
+  });
+  return response.json();
+}
+
+export async function deletePaystub(paystubId: number) {
+  await apiRequest(`/api/paystubs/${paystubId}`, {
+    method: "DELETE",
+  });
 }

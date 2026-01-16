@@ -51,3 +51,11 @@ def download_pdf_bytes(key: str) -> bytes:
         return body.read() if body else b""
     except ClientError as exc:
         raise S3ConfigError(f"Failed to download PDF from S3: {exc}") from exc
+
+
+def delete_pdf_bytes(key: str) -> None:
+    client = get_s3_client()
+    try:
+        client.delete_object(Bucket=settings.s3_bucket, Key=key)
+    except ClientError as exc:
+        raise S3ConfigError(f"Failed to delete PDF from S3: {exc}") from exc

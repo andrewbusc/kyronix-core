@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 
-import { createUser, deleteUser, listUsers } from "../../api/client";
+import {
+  createUser,
+  deleteUser,
+  listUsers,
+  resetUserPassword,
+  updateUser,
+} from "../../api/client";
 import type { User } from "../../App";
 
 type CreateUserPayload = {
@@ -53,6 +59,10 @@ export default function AdminEmployees() {
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<CreateUserPayload>({ ...emptyForm });
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+
+  const isEditing = editingUserId !== null;
 
   const formatStatus = (status: User["employment_status"]) =>
     status === "FORMER_EMPLOYEE" ? "Former Employee" : "Active";
@@ -71,10 +81,43 @@ export default function AdminEmployees() {
     fetchUsers();
   }, []);
 
-  const handleCreateUser = async () => {
+  const resetForm = () => {
+    setForm({ ...emptyForm });
+    setEditingUserId(null);
+    setResetPassword("");
+  };
+
+  const startEditUser = (entry: User) => {
+    setError(null);
+    setEditingUserId(entry.id);
+    setResetPassword("");
+    setForm({
+      email: entry.email,
+      password: "",
+      legal_first_name: entry.legal_first_name,
+      legal_last_name: entry.legal_last_name,
+      preferred_name: entry.preferred_name || "",
+      job_title: entry.job_title,
+      department: entry.department,
+      hire_date: entry.hire_date,
+      phone: entry.phone || "",
+      address_line1: entry.address_line1,
+      address_line2: entry.address_line2 || "",
+      city: entry.city,
+      state: entry.state,
+      postal_code: entry.postal_code,
+      country: entry.country,
+      emergency_contact_name: entry.emergency_contact_name,
+      emergency_contact_phone: entry.emergency_contact_phone,
+      emergency_contact_relationship: entry.emergency_contact_relationship,
+      role: entry.role,
+      employment_status: entry.employment_status,
+    });
+  };
+
+  const handleSaveUser = async () => {
     if (
       !form.email ||
-      !form.password ||
       !form.legal_first_name ||
       !form.legal_last_name ||
       !form.job_title ||
@@ -92,19 +135,60 @@ export default function AdminEmployees() {
       setError("Please complete all required fields.");
       return;
     }
+    if (!isEditing && !form.password) {
+      setError("Password is required for new employees.");
+      return;
+    }
     setError(null);
     try {
-      const payload: CreateUserPayload = {
-        ...form,
+      const payload = {
+        email: form.email,
+        legal_first_name: form.legal_first_name,
+        legal_last_name: form.legal_last_name,
         preferred_name: form.preferred_name || null,
+        job_title: form.job_title,
+        department: form.department,
+        hire_date: form.hire_date,
         phone: form.phone || null,
+        address_line1: form.address_line1,
         address_line2: form.address_line2 || null,
+        city: form.city,
+        state: form.state,
+        postal_code: form.postal_code,
+        country: form.country,
+        emergency_contact_name: form.emergency_contact_name,
+        emergency_contact_phone: form.emergency_contact_phone,
+        emergency_contact_relationship: form.emergency_contact_relationship,
+        role: form.role,
+        employment_status: form.employment_status,
       };
-      await createUser(payload);
-      setForm({ ...emptyForm });
+      if (isEditing && editingUserId !== null) {
+        await updateUser(editingUserId, payload);
+      } else {
+        await createUser({ ...payload, password: form.password });
+      }
+      resetForm();
       await fetchUsers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create user");
+      setError(err instanceof Error ? err.message : "Unable to save user");
+    }
+  };
+
+  const handleToggleActive = async (entry: User) => {
+    if (entry.is_active) {
+      const confirmed = window.confirm(
+        `Disable ${entry.legal_first_name} ${entry.legal_last_name}? They will lose access.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setError(null);
+    try {
+      await updateUser(entry.id, { is_active: !entry.is_active });
+      await fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update status");
     }
   };
 
@@ -122,6 +206,29 @@ export default function AdminEmployees() {
       await fetchUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete user");
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!editingUserId) {
+      setError("Select an employee to reset.");
+      return;
+    }
+    if (!resetPassword) {
+      setError("Enter a new password.");
+      return;
+    }
+    const displayName = `${form.legal_first_name} ${form.legal_last_name}`.trim();
+    const confirmed = window.confirm(`Reset password for ${displayName}?`);
+    if (!confirmed) {
+      return;
+    }
+    setError(null);
+    try {
+      await resetUserPassword(editingUserId, resetPassword);
+      setResetPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reset password");
     }
   };
 
@@ -160,6 +267,18 @@ export default function AdminEmployees() {
                   <span className="pill">{entry.is_active ? "Enabled" : "Disabled"}</span>
                   <button
                     className="button secondary"
+                    onClick={() => startEditUser(entry)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => handleToggleActive(entry)}
+                  >
+                    {entry.is_active ? "Disable" : "Reactivate"}
+                  </button>
+                  <button
+                    className="button secondary"
                     style={{ borderColor: "rgba(154, 74, 20, 0.4)", color: "#9a4a14" }}
                     onClick={() => handleDeleteUser(entry)}
                   >
@@ -174,7 +293,7 @@ export default function AdminEmployees() {
       </div>
 
       <div className="card">
-        <h2 style={{ marginTop: 0 }}>Add employee</h2>
+        <h2 style={{ marginTop: 0 }}>{isEditing ? "Edit employee" : "Add employee"}</h2>
         <div className="grid">
           <div className="row">
             <input
@@ -205,9 +324,10 @@ export default function AdminEmployees() {
           />
           <input
             className="input"
-            placeholder="Password"
+            placeholder={isEditing ? "Password (create only)" : "Password"}
             type="password"
             value={form.password}
+            disabled={isEditing}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
           />
           <div className="row">
@@ -332,9 +452,30 @@ export default function AdminEmployees() {
               <option value="FORMER_EMPLOYEE">Former Employee</option>
             </select>
           </div>
-          <button className="button" onClick={handleCreateUser}>
-            Add employee
-          </button>
+          {isEditing && (
+            <div className="row">
+              <input
+                className="input"
+                placeholder="New password"
+                type="password"
+                value={resetPassword}
+                onChange={(event) => setResetPassword(event.target.value)}
+              />
+              <button className="button secondary" onClick={handleResetPassword}>
+                Reset password
+              </button>
+            </div>
+          )}
+          <div className="row">
+            <button className="button" onClick={handleSaveUser}>
+              {isEditing ? "Save changes" : "Add employee"}
+            </button>
+            {isEditing && (
+              <button className="button secondary" onClick={resetForm}>
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </>
