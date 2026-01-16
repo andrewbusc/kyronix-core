@@ -1,11 +1,18 @@
 import io
+import math
 import textwrap
 from datetime import date, datetime
+from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from app.core.config import settings
+
+_REGISTERED_FONTS: set[str] = set()
 
 
 def build_employment_verification_filename(employee_last_name: str, generated_on: datetime) -> str:
@@ -31,6 +38,79 @@ def _format_phone_for_sentence(phone: str | None) -> str:
     if len(digits) == 10:
         return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
     return phone
+
+
+def _resolve_logo_path() -> Path | None:
+    if settings.verification_logo_path:
+        candidate = Path(settings.verification_logo_path)
+        if candidate.is_file():
+            return candidate
+    candidate = Path(__file__).resolve().parent / "assets" / "kyronix_logo_dark_on_light.png"
+    return candidate if candidate.is_file() else None
+
+
+def _register_font(font_name: str, font_path: str | None) -> str | None:
+    if not font_path:
+        return None
+    candidate = Path(font_path)
+    if not candidate.is_file():
+        return None
+    if font_name in _REGISTERED_FONTS:
+        return font_name
+    try:
+        pdfmetrics.registerFont(TTFont(font_name, str(candidate)))
+        _REGISTERED_FONTS.add(font_name)
+        return font_name
+    except Exception:
+        return None
+
+
+def _draw_star(c: canvas.Canvas, center_x: float, center_y: float, size: float) -> None:
+    outer = size / 2
+    inner = outer * 0.5
+    path = c.beginPath()
+    for i in range(10):
+        angle = math.pi / 2 + i * math.pi / 5
+        radius = outer if i % 2 == 0 else inner
+        x = center_x + math.cos(angle) * radius
+        y = center_y + math.sin(angle) * radius
+        if i == 0:
+            path.moveTo(x, y)
+        else:
+            path.lineTo(x, y)
+    path.close()
+    c.saveState()
+    c.drawPath(path, fill=1, stroke=0)
+    c.restoreState()
+
+
+def _draw_centered_star_line(
+    c: canvas.Canvas,
+    center_x: float,
+    y: float,
+    line: str,
+    font_name: str,
+    font_size: float,
+) -> None:
+    if "*" not in line:
+        c.drawCentredString(center_x, y, line.strip())
+        return
+    segments = [seg.strip() for seg in line.split("*") if seg.strip()]
+    if len(segments) <= 1:
+        c.drawCentredString(center_x, y, line.replace("*", "").strip())
+        return
+    star_size = font_size * 0.6
+    star_padding = font_size * 0.25
+    widths = [pdfmetrics.stringWidth(seg, font_name, font_size) for seg in segments]
+    total = sum(widths) + (len(segments) - 1) * (star_size + 2 * star_padding)
+    x = center_x - total / 2
+    for index, segment in enumerate(segments):
+        c.drawString(x, y, segment)
+        x += widths[index]
+        if index < len(segments) - 1:
+            x += star_padding
+            _draw_star(c, x + star_size / 2, y + font_size * 0.3, star_size)
+            x += star_size + star_padding
 
 
 def render_employment_verification_pdf(
@@ -61,8 +141,36 @@ def render_employment_verification_pdf(
     x_left = 72
     y = page_height - 72
 
-    c.setFont("Helvetica", 11)
+    body_font = _register_font("VerificationBody", settings.verification_body_font_path) or "Helvetica"
+    signature_font = (
+        _register_font("VerificationSignature", settings.verification_signature_font_path)
+        or body_font
+    )
+    footer_font = body_font
+    c.setFont(body_font, 11)
     line_height = 14
+
+    logo_path = _resolve_logo_path()
+    if logo_path:
+        try:
+            image = ImageReader(str(logo_path))
+            img_width, img_height = image.getSize()
+            max_width = 180
+            max_height = 60
+            scale = min(max_width / img_width, max_height / img_height, 1.0)
+            logo_width = img_width * scale
+            logo_height = img_height * scale
+            c.drawImage(
+                image,
+                x_left,
+                y - logo_height,
+                width=logo_width,
+                height=logo_height,
+                mask="auto",
+            )
+            y -= logo_height + line_height
+        except Exception:
+            pass
 
     c.drawString(x_left, y, generated_at.strftime("%B %d, %Y"))
     y -= line_height * 2
@@ -83,6 +191,7 @@ def render_employment_verification_pdf(
 
     hire_date_str = _format_date(hire_date)
     title_label = "Current Job Title" if status_key == "ACTIVE" else "Last Job Title"
+    detail_indent = 24
     info_lines = [
         f"Employee Name: {employee_name}",
         f"Hire Date: {hire_date_str}",
@@ -91,7 +200,7 @@ def render_employment_verification_pdf(
     if include_salary and salary_amount is not None:
         info_lines.append(f"Annual Base Salary: ${salary_amount:,.2f}")
     for line in info_lines:
-        c.drawString(x_left, y, line)
+        c.drawString(x_left + detail_indent, y, line)
         y -= line_height + 4
     y -= 2
 
@@ -119,9 +228,11 @@ def render_employment_verification_pdf(
 
     signer_name = settings.verification_signer_name
     signer_credentials = settings.verification_signer_credentials.strip()
+    c.setFont(signature_font, 16)
     c.drawString(x_left, y, signer_name)
-    y -= line_height * 2
+    y -= line_height * 2.3
 
+    c.setFont(body_font, 11)
     if signer_credentials:
         c.drawString(x_left, y, f"{signer_name}, {signer_credentials}")
     else:
@@ -136,15 +247,22 @@ def render_employment_verification_pdf(
     footer_fax = settings.verification_fax
     footer_email = contact_email
 
-    footer_y = 72
-    c.setFont("Helvetica", 9)
+    footer_y = 36
+    c.setFont(footer_font, 9)
     if footer_address:
-        c.drawCentredString(page_width / 2, footer_y + 24, f"* {footer_address}")
+        _draw_centered_star_line(
+            c,
+            page_width / 2,
+            footer_y + 24,
+            footer_address,
+            footer_font,
+            9,
+        )
     if footer_phone:
         phone_fax = f"Phone {footer_phone}"
         if footer_fax:
             phone_fax = f"{phone_fax} * Fax {footer_fax}"
-        c.drawCentredString(page_width / 2, footer_y + 12, phone_fax)
+        _draw_centered_star_line(c, page_width / 2, footer_y + 12, phone_fax, footer_font, 9)
     if footer_email:
         c.drawCentredString(page_width / 2, footer_y, footer_email)
 

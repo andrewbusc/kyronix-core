@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     verification_phone: str = "855-912-9883"
     verification_fax: str = "855-912-9392"
     verification_footer_address: str = "28 Geary St. Suite 650 * San Francisco, CA 94108"
+    verification_logo_path: str | None = None
+    verification_body_font_path: str | None = None
+    verification_signature_font_path: str | None = None
 
     database_url: str = "postgresql+psycopg2://kyronix:kyronix@db:5432/kyronix_core"
     secret_key: str = "change-me"
