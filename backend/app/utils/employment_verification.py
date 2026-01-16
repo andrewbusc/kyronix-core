@@ -3,6 +3,7 @@ import math
 import textwrap
 from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
@@ -246,15 +247,20 @@ def render_employment_verification_pdf(
 
     footer_y = 36
     host = settings.base_url.replace("https://", "").replace("http://", "")
+    footer_time = generated_at
+    if footer_time.tzinfo is None:
+        footer_time = footer_time.replace(tzinfo=ZoneInfo(settings.time_zone))
     footer_text = (
         f"{settings.employer_legal_name} | Generated via {settings.project_name} ({host}) | "
-        f"Generated on: {generated_at.strftime('%Y-%m-%d %H:%M:%S')} PT"
+        f"Generated on: {footer_time.strftime('%Y-%m-%d %H:%M:%S')} PT"
     )
     footer_notice = "This document was generated electronically via Kyronix Core."
 
-    c.setFont(footer_font, 9)
-    c.drawString(x_left, footer_y + 12, footer_text)
-    c.drawString(x_left, footer_y, footer_notice)
+    c.setFont("Helvetica", 9)
+    c.setFillColorRGB(0.2, 0.2, 0.2)
+    c.drawString(x_left, footer_y, footer_text)
+    c.drawString(x_left, footer_y - 12, footer_notice)
+    c.setFillColorRGB(0, 0, 0)
 
     c.showPage()
     c.save()
