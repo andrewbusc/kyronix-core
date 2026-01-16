@@ -159,8 +159,8 @@ def render_employment_verification_pdf(
         try:
             image = ImageReader(str(logo_path))
             img_width, img_height = image.getSize()
-            max_width = 180
-            max_height = 60
+            max_width = 140
+            max_height = 45
             scale = min(max_width / img_width, max_height / img_height, 1.0)
             logo_width = img_width * scale
             logo_height = img_height * scale
@@ -172,7 +172,7 @@ def render_employment_verification_pdf(
                 height=logo_height,
                 mask="auto",
             )
-            y -= logo_height + line_height
+            y -= logo_height + (line_height * 1.5)
         except Exception:
             pass
 
@@ -230,7 +230,7 @@ def render_employment_verification_pdf(
 
     signer_name = settings.verification_signer_name
     signer_credentials = settings.verification_signer_credentials.strip()
-    c.setFont(signature_font, 16)
+    c.setFont(signature_font, 18)
     c.drawString(x_left, y, signer_name)
     y -= line_height * 2.3
 
@@ -251,6 +251,11 @@ def render_employment_verification_pdf(
 
     footer_y = 36
     c.setFont(footer_font, 9)
+    c.drawCentredString(
+        page_width / 2,
+        footer_y + 36,
+        "This document was generated electronically via Kyronix Core.",
+    )
     if footer_address:
         _draw_centered_star_line(
             c,
@@ -267,11 +272,6 @@ def render_employment_verification_pdf(
         _draw_centered_star_line(c, page_width / 2, footer_y + 12, phone_fax, footer_font, 9)
     if footer_email:
         c.drawCentredString(page_width / 2, footer_y, footer_email)
-    c.drawCentredString(
-        page_width / 2,
-        footer_y - 12,
-        "This document was generated electronically via Kyronix Core.",
-    )
 
     c.showPage()
     c.save()
