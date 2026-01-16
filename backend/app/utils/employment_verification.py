@@ -42,7 +42,7 @@ def render_employment_verification_pdf(
     hire_date,
     verifier_name: str,
     verifier_company: str | None,
-    verifier_email: str,
+    verifier_email: str | None,
     purpose: str,
     include_salary: bool,
     salary_amount: float | None,
