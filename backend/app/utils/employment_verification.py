@@ -1,7 +1,6 @@
 import io
 import textwrap
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import date, datetime
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -15,6 +14,23 @@ def build_employment_verification_filename(employee_last_name: str, generated_on
         safe_last = "EMPLOYEE"
     date_part = generated_on.strftime("%Y%m%d")
     return f"KYRONIX_EMPLOYMENT_VERIFICATION_{safe_last}_{date_part}.pdf"
+
+
+def _format_date(value: date | datetime | None) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%B %d, %Y")
+    if isinstance(value, date):
+        return value.strftime("%B %d, %Y")
+    return str(value) if value is not None else "N/A"
+
+
+def _format_phone_for_sentence(phone: str | None) -> str:
+    if not phone:
+        return ""
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    return phone
 
 
 def render_employment_verification_pdf(
@@ -45,60 +61,92 @@ def render_employment_verification_pdf(
     x_left = 72
     y = page_height - 72
 
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(x_left, y, "Employment Verification Letter")
-    y -= 24
-
     c.setFont("Helvetica", 11)
-    c.drawString(x_left, y, settings.employer_legal_name)
-    y -= 16
-    c.drawString(x_left, y, settings.company_address)
-    y -= 16
-    c.drawString(x_left, y, f"Contact: {settings.payroll_contact_email}")
-    y -= 20
+    line_height = 14
 
-    c.drawString(x_left, y, f"Date: {generated_at.strftime('%B %d, %Y')}")
-    y -= 24
+    c.drawString(x_left, y, generated_at.strftime("%B %d, %Y"))
+    y -= line_height * 2
 
-    c.drawString(x_left, y, f"To: {verifier_name}")
-    y -= 16
-    if verifier_company:
-        c.drawString(x_left, y, verifier_company)
-        y -= 16
-    c.drawString(x_left, y, f"Email: {verifier_email}")
-    y -= 24
+    c.drawString(x_left, y, "To Whom It May Concern,")
+    y -= line_height * 2
 
     status_key = employment_status.upper()
-    status_phrase = "is employed" if status_key == "ACTIVE" else "was employed"
-    status_label = "Former Employee" if status_key == "FORMER_EMPLOYEE" else "Active"
-    paragraph_1 = (
-        f"This letter confirms that {employee_name} {status_phrase} by "
-        f"{settings.employer_legal_name} as {job_title} in the {department} department."
+    employment_phrase = "full-time employment" if status_key == "ACTIVE" else "prior employment"
+    paragraph = (
+        f"Please accept this letter as verification of {employment_phrase} with "
+        f"{settings.employer_legal_name} for the employee listed below."
     )
-    paragraph_2 = f"Employment status: {status_label}. Hire date: {hire_date}."
-    paragraph_3 = f"Purpose of verification: {purpose}."
-    paragraph_4 = "This verification is provided at the employee's request."
+    for line in textwrap.wrap(paragraph, width=90):
+        c.drawString(x_left, y, line)
+        y -= line_height
+    y -= 6
 
-    lines = []
-    for paragraph in (paragraph_1, paragraph_2, paragraph_3, paragraph_4):
-        lines.extend(textwrap.wrap(paragraph, width=88))
-        lines.append("")
-
+    hire_date_str = _format_date(hire_date)
+    title_label = "Current Job Title" if status_key == "ACTIVE" else "Last Job Title"
+    info_lines = [
+        f"Employee Name: {employee_name}",
+        f"Hire Date: {hire_date_str}",
+        f"{title_label}: {job_title}",
+    ]
     if include_salary and salary_amount is not None:
-        salary_line = f"Annual base salary: ${salary_amount:,.2f}."
-        lines.extend(textwrap.wrap(salary_line, width=88))
-        lines.append("")
+        info_lines.append(f"Annual Base Salary: ${salary_amount:,.2f}")
+    for line in info_lines:
+        c.drawString(x_left, y, line)
+        y -= line_height + 4
+    y -= 2
 
-    lines.append(f"For questions, contact {settings.payroll_contact_email}.")
+    contact_intro = (
+        "If you have any questions or need any additional information, "
+        "please feel free to contact me at"
+    )
+    for line in textwrap.wrap(contact_intro, width=90):
+        c.drawString(x_left, y, line)
+        y -= line_height
 
-    c.setFont("Helvetica", 11)
-    text = c.beginText(x_left, y)
-    for line in lines:
-        text.textLine(line)
-    c.drawText(text)
+    contact_phone = _format_phone_for_sentence(settings.verification_phone)
+    contact_email = settings.verification_signer_email or settings.payroll_contact_email
+    if contact_phone:
+        contact_line = f"{contact_phone} or you can reach me by email at {contact_email}."
+    else:
+        contact_line = f"You can reach me by email at {contact_email}."
+    for line in textwrap.wrap(contact_line, width=90):
+        c.drawString(x_left, y, line)
+        y -= line_height
 
+    y -= line_height
+    c.drawString(x_left, y, "Sincerely,")
+    y -= line_height * 2
+
+    signer_name = settings.verification_signer_name
+    signer_credentials = settings.verification_signer_credentials.strip()
+    c.drawString(x_left, y, signer_name)
+    y -= line_height * 2
+
+    if signer_credentials:
+        c.drawString(x_left, y, f"{signer_name}, {signer_credentials}")
+    else:
+        c.drawString(x_left, y, signer_name)
+    y -= line_height
+
+    if settings.verification_signer_title:
+        c.drawString(x_left, y, settings.verification_signer_title)
+
+    footer_address = settings.verification_footer_address or settings.company_address
+    footer_phone = settings.verification_phone
+    footer_fax = settings.verification_fax
+    footer_email = contact_email
+
+    footer_y = 72
     c.setFont("Helvetica", 9)
-    c.drawString(x_left, 24, "This document was generated electronically via Kyronix Core.")
+    if footer_address:
+        c.drawCentredString(page_width / 2, footer_y + 24, f"* {footer_address}")
+    if footer_phone:
+        phone_fax = f"Phone {footer_phone}"
+        if footer_fax:
+            phone_fax = f"{phone_fax} * Fax {footer_fax}"
+        c.drawCentredString(page_width / 2, footer_y + 12, phone_fax)
+    if footer_email:
+        c.drawCentredString(page_width / 2, footer_y, footer_email)
 
     c.showPage()
     c.save()

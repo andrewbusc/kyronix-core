@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     environment: str = "development"
     company_address: str = "28 Geary St Suite 650 San Francisco, CA 94108"
     payroll_contact_email: str = "hr@kyronix.ai"
+    verification_signer_name: str = "Sandra Morrow"
+    verification_signer_credentials: str = "PHR, SHRM-CP"
+    verification_signer_title: str = "HR Manager"
+    verification_signer_email: str = "sandra.morrow@kyronix.ai"
+    verification_phone: str = "855-912-9883"
+    verification_fax: str = "855-912-9392"
+    verification_footer_address: str = "28 Geary St. Suite 650 * San Francisco, CA 94108"
 
     database_url: str = "postgresql+psycopg2://kyronix:kyronix@db:5432/kyronix_core"
     secret_key: str = "change-me"
