@@ -12,7 +12,7 @@ type VerificationRequest = {
   id: number;
   verifier_name: string;
   verifier_company?: string | null;
-  verifier_email: string;
+  verifier_email?: string | null;
   purpose: string;
   include_salary: boolean;
   status: "PENDING" | "GENERATED" | "SENT" | "DECLINED";
@@ -86,7 +86,10 @@ export default function AdminRequests() {
       const salaryValue = salaryInputs[request.id];
       const salaryAmount =
         request.include_salary && salaryValue ? Number.parseFloat(salaryValue) : undefined;
-      const deliveryMethod = deliveryMethods[request.id] || "VERIFIER";
+      const deliveryMethod =
+        deliveryMethods[request.id] ||
+        request.delivery_method ||
+        (request.verifier_email ? "VERIFIER" : "EMPLOYEE");
       const { blob, filename } = await generateVerificationRequest(
         request.id,
         salaryAmount,
@@ -169,7 +172,7 @@ export default function AdminRequests() {
                       {request.verifier_company || "Company not provided"}
                     </div>
                     <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                      {request.verifier_email}
+                      {request.verifier_email || "No verifier email provided"}
                     </div>
                     <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
                       {`Requested: ${formatDate(request.created_at)} \u2022 Status: ${formatStatus(
@@ -225,7 +228,11 @@ export default function AdminRequests() {
                       Delivery method
                       <select
                         className="input"
-                        value={deliveryMethods[request.id] || "VERIFIER"}
+                        value={
+                          deliveryMethods[request.id] ||
+                          request.delivery_method ||
+                          (request.verifier_email ? "VERIFIER" : "EMPLOYEE")
+                        }
                         onChange={(event) =>
                           setDeliveryMethods({
                             ...deliveryMethods,
@@ -233,7 +240,9 @@ export default function AdminRequests() {
                           })
                         }
                       >
-                        <option value="VERIFIER">Send directly to verifier</option>
+                        <option value="VERIFIER" disabled={!request.verifier_email}>
+                          Send directly to verifier
+                        </option>
                         <option value="EMPLOYEE">Make available in employee documents</option>
                       </select>
                     </label>

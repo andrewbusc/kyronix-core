@@ -20,7 +20,7 @@ type VerificationRequest = {
   id: number;
   verifier_name: string;
   verifier_company?: string | null;
-  verifier_email: string;
+  verifier_email?: string | null;
   purpose: string;
   include_salary: boolean;
   consent: boolean;
@@ -41,6 +41,7 @@ type VerificationForm = {
   purpose: string;
   include_salary: boolean;
   consent: boolean;
+  delivery_method: "VERIFIER" | "EMPLOYEE";
 };
 
 function getSafeFileName(title: string) {
@@ -66,6 +67,7 @@ export default function Documents() {
     purpose: "",
     include_salary: false,
     consent: false,
+    delivery_method: "VERIFIER",
   });
 
   const formatVerificationStatus = (status: VerificationRequest["status"]) => {
@@ -135,10 +137,11 @@ export default function Documents() {
   };
 
   const handleVerificationSubmit = async () => {
+    const needsEmail = verificationForm.delivery_method === "VERIFIER";
     if (
       !verificationForm.verifier_name ||
-      !verificationForm.verifier_email ||
-      !verificationForm.purpose
+      !verificationForm.purpose ||
+      (needsEmail && !verificationForm.verifier_email)
     ) {
       setVerificationError("Please complete all required fields.");
       return;
@@ -152,10 +155,11 @@ export default function Documents() {
       await createVerificationRequest({
         verifier_name: verificationForm.verifier_name,
         verifier_company: verificationForm.verifier_company || null,
-        verifier_email: verificationForm.verifier_email,
+        verifier_email: verificationForm.verifier_email.trim() || null,
         purpose: verificationForm.purpose,
         include_salary: verificationForm.include_salary,
         consent: verificationForm.consent,
+        delivery_method: verificationForm.delivery_method,
       });
       setVerificationForm({
         verifier_name: "",
@@ -164,6 +168,7 @@ export default function Documents() {
         purpose: "",
         include_salary: false,
         consent: false,
+        delivery_method: "VERIFIER",
       });
       await refreshVerificationRequests();
     } catch (err) {
@@ -221,7 +226,7 @@ export default function Documents() {
           </div>
           <input
             className="input"
-            placeholder="Verifier email"
+            placeholder="Verifier email (optional)"
             type="email"
             value={verificationForm.verifier_email}
             onChange={(event) =>
@@ -257,6 +262,22 @@ export default function Documents() {
             />
             I authorize Kyronix LLC to share my employment details with the verifier above.
           </label>
+          <label className="row" style={{ gap: 10 }}>
+            Preferred delivery
+            <select
+              className="input"
+              value={verificationForm.delivery_method}
+              onChange={(event) =>
+                setVerificationForm({
+                  ...verificationForm,
+                  delivery_method: event.target.value as "VERIFIER" | "EMPLOYEE",
+                })
+              }
+            >
+              <option value="VERIFIER">Send directly to verifier</option>
+              <option value="EMPLOYEE">Make available in my documents</option>
+            </select>
+          </label>
           <button className="button" onClick={handleVerificationSubmit}>
             Submit request
           </button>
@@ -290,7 +311,7 @@ export default function Documents() {
                       {request.verifier_company || "Company not provided"}
                     </div>
                     <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                      {request.verifier_email}
+                      {request.verifier_email || "No verifier email provided"}
                     </div>
                     <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
                       {`Requested: ${formatDate(request.created_at)} \u2022 Status: ${formatVerificationStatus(
@@ -313,6 +334,13 @@ export default function Documents() {
                     ? "Salary disclosure requested."
                     : "Salary disclosure not requested."}
                 </div>
+                {request.delivery_method && (
+                  <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                    {request.delivery_method === "EMPLOYEE"
+                      ? "Preferred delivery: employee documents."
+                      : "Preferred delivery: verifier."}
+                  </div>
+                )}
                 {request.document_id && (
                   <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
                     Saved to your Documents.

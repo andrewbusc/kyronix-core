@@ -218,6 +218,7 @@ export async function createVerificationRequest(payload: {
   purpose: string;
   include_salary: boolean;
   consent: boolean;
+  delivery_method?: "VERIFIER" | "EMPLOYEE";
 }) {
   const response = await apiRequest("/api/verification-requests", {
     method: "POST",

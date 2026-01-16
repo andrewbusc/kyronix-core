@@ -22,7 +22,7 @@ class EmploymentVerificationRequest(Base):
     employee_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     verifier_name = Column(String, nullable=False)
     verifier_company = Column(String, nullable=True)
-    verifier_email = Column(String, nullable=False)
+    verifier_email = Column(String, nullable=True)
     purpose = Column(String, nullable=False)
     include_salary = Column(Boolean, nullable=False, default=False)
     consent = Column(Boolean, nullable=False, default=False)

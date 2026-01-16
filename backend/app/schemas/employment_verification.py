@@ -9,10 +9,11 @@ from app.core.verification import VerificationDeliveryMethod, VerificationReques
 class EmploymentVerificationRequestCreate(BaseModel):
     verifier_name: str
     verifier_company: str | None = None
-    verifier_email: EmailStr
+    verifier_email: EmailStr | None = None
     purpose: str
     include_salary: bool = False
     consent: bool = Field(default=False, description="Employee consent required")
+    delivery_method: VerificationDeliveryMethod = VerificationDeliveryMethod.VERIFIER
 
 
 class EmploymentVerificationGenerate(BaseModel):
@@ -43,7 +44,7 @@ class EmploymentVerificationRequestRead(BaseModel):
     employee_id: int
     verifier_name: str
     verifier_company: str | None
-    verifier_email: EmailStr
+    verifier_email: EmailStr | None
     purpose: str
     include_salary: bool
     consent: bool
