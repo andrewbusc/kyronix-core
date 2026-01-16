@@ -45,7 +45,11 @@ def _resolve_logo_path() -> Path | None:
         candidate = Path(settings.verification_logo_path)
         if candidate.is_file():
             return candidate
-    candidate = Path(__file__).resolve().parent / "assets" / "kyronix_logo_dark_on_light.png"
+    candidate = (
+        Path(__file__).resolve().parent.parent
+        / "assets"
+        / "kyronix_logo_dark_on_light.png"
+    )
     return candidate if candidate.is_file() else None
 
 
@@ -191,7 +195,7 @@ def render_employment_verification_pdf(
 
     hire_date_str = _format_date(hire_date)
     title_label = "Current Job Title" if status_key == "ACTIVE" else "Last Job Title"
-    detail_indent = 24
+    detail_indent = 36
     info_lines = [
         f"Employee Name: {employee_name}",
         f"Hire Date: {hire_date_str}",
@@ -204,21 +208,19 @@ def render_employment_verification_pdf(
         y -= line_height + 4
     y -= 2
 
-    contact_intro = (
-        "If you have any questions or need any additional information, "
-        "please feel free to contact me at"
-    )
-    for line in textwrap.wrap(contact_intro, width=90):
-        c.drawString(x_left, y, line)
-        y -= line_height
-
     contact_phone = _format_phone_for_sentence(settings.verification_phone)
-    contact_email = settings.verification_signer_email or settings.payroll_contact_email
+    contact_email = settings.payroll_contact_email
     if contact_phone:
-        contact_line = f"{contact_phone} or you can reach me by email at {contact_email}."
+        contact_paragraph = (
+            "If you have any questions or need any additional information, please feel free to "
+            f"contact me at {contact_phone} or you can reach me by email at {contact_email}."
+        )
     else:
-        contact_line = f"You can reach me by email at {contact_email}."
-    for line in textwrap.wrap(contact_line, width=90):
+        contact_paragraph = (
+            "If you have any questions or need any additional information, please feel free to "
+            f"contact me by email at {contact_email}."
+        )
+    for line in textwrap.wrap(contact_paragraph, width=90):
         c.drawString(x_left, y, line)
         y -= line_height
 
