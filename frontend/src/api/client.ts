@@ -204,6 +204,26 @@ export async function updateUser(
   return response.json();
 }
 
+export async function updateMyProfile(payload: {
+  preferred_name?: string | null;
+  phone?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relationship?: string | null;
+}) {
+  const response = await apiRequest("/api/users/me", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
 export async function resetUserPassword(userId: number, newPassword: string) {
   const response = await apiRequest(`/api/users/${userId}/reset-password`, {
     method: "POST",

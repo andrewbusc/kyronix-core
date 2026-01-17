@@ -54,6 +54,22 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class UserSelfUpdate(BaseModel):
+    preferred_name: str | None = None
+    phone: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    emergency_contact_name: str | None = None
+    emergency_contact_phone: str | None = None
+    emergency_contact_relationship: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class AdminPasswordReset(BaseModel):
     new_password: str
 

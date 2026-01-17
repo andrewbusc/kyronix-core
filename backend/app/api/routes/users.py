@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_roles, require_write_access
 from app.core.roles import EmploymentStatus, RoleEnum
 from app.core.security import get_password_hash
 from app.db.models.user import User
 from app.schemas.auth import PasswordResetResponse
-from app.schemas.user import AdminPasswordReset, UserCreate, UserRead, UserUpdate
+from app.schemas.user import AdminPasswordReset, UserCreate, UserRead, UserSelfUpdate, UserUpdate
 
 router = APIRouter()
 
@@ -64,6 +64,21 @@ def list_users(
     _user: User = Depends(require_roles(RoleEnum.ADMIN)),
 ):
     return db.query(User).order_by(User.id).all()
+
+
+@router.patch("/me", response_model=UserRead)
+def update_my_profile(
+    payload: UserSelfUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access),
+):
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(current_user, field, value)
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
 
 
 @router.patch("/{user_id}", response_model=UserRead)

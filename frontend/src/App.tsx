@@ -74,6 +74,10 @@ export default function App() {
     setUser(null);
   };
 
+  const handleProfileUpdate = (updated: User) => {
+    setUser(updated);
+  };
+
   if (loading) {
     return <div className="content">Loading Kyronix Core...</div>;
   }
@@ -104,7 +108,10 @@ export default function App() {
         <Route path="/" element={<Home user={user as User} />} />
         <Route path="/paystubs" element={<Paystubs />} />
         <Route path="/documents" element={<Documents />} />
-        <Route path="/profile" element={<Profile user={user as User} />} />
+        <Route
+          path="/profile"
+          element={<Profile user={user as User} onProfileUpdate={handleProfileUpdate} />}
+        />
         <Route path="/support" element={<Support />} />
         <Route
           path="/admin"
