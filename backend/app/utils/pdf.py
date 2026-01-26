@@ -82,12 +82,23 @@ def render_paystub_pdf(paystub) -> bytes:
     now = datetime.now(ZoneInfo(settings.time_zone))
     earnings = paystub.earnings or []
     deductions = paystub.deductions or []
+    margin = 72
+    content_right = page_width - margin
+    footer_height = 72
+    section_color = (0.12, 0.55, 0.6)
+    light_gray = (0.85, 0.85, 0.85)
 
     def as_amount(value):
         try:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    def format_currency(value):
+        return f"${as_amount(value):,.2f}"
+
+    def format_number(value):
+        return f"{value:.2f}" if isinstance(value, (int, float)) else "-"
 
     gross_pay = float(paystub.gross_pay or 0)
     if gross_pay == 0:
@@ -101,119 +112,208 @@ def render_paystub_pdf(paystub) -> bytes:
     if net_pay == 0:
         net_pay = gross_pay - total_deductions
 
-    x_left = 72
-    y = page_height - 72
-
     def draw_footer():
         draw_paystub_style_footer(
             c,
-            margin=x_left,
-            footer_height=72,
+            margin=margin,
+            footer_height=footer_height,
             generated_at=now,
             tz=ZoneInfo(settings.time_zone),
             tz_label="PT",
         )
 
-    def draw_header(title_suffix=""):
-        nonlocal y
-        y = page_height - 72
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(x_left, y, f"{settings.project_name} Paystub{title_suffix}")
-        y -= 24
-        c.setFont("Helvetica", 11)
-        c.drawString(x_left, y, f"Employer: {settings.employer_legal_name}")
-        y -= 18
-        employee_name = f"{paystub.employee_first_name} {paystub.employee_last_name}"
-        c.drawString(x_left, y, f"Employee: {employee_name}")
-        y -= 18
-        c.drawString(
-            x_left,
-            y,
-            f"Pay period: {paystub.pay_period_start} to {paystub.pay_period_end}",
-        )
-        y -= 18
-        c.drawString(x_left, y, f"Pay date: {paystub.pay_date}")
-        y -= 24
+    def draw_info_boxes(y_top: float) -> float:
+        gap = 18
+        box_width = (content_right - margin - gap)
+        box_width /= 2
+        padding = 8
+        title_height = 12
+        line_height = 11
 
-    def draw_earnings_header():
-        nonlocal y
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(x_left, y, "Earnings Statement")
+        company_lines = [settings.employer_legal_name]
+        employee_lines = [
+            f"{paystub.employee_first_name} {paystub.employee_last_name}",
+            f"Pay period: {paystub.pay_period_start} - {paystub.pay_period_end}",
+            f"Pay date: {paystub.pay_date}",
+        ]
+
+        def calc_height(line_count: int) -> float:
+            return (padding * 2) + title_height + (line_count * line_height)
+
+        box_height = max(calc_height(len(company_lines)), calc_height(len(employee_lines)))
+
+        def draw_box(x: float, title: str, lines: list[str]) -> None:
+            c.setStrokeColorRGB(*light_gray)
+            c.setLineWidth(0.7)
+            c.rect(x, y_top - box_height, box_width, box_height, stroke=1, fill=0)
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont("Helvetica-Bold", 9)
+            title_y = y_top - padding
+            c.drawString(x + padding, title_y, title)
+            text_y = title_y - title_height
+            c.setFont("Helvetica", 9)
+            for line in lines:
+                c.drawString(x + padding, text_y, line)
+                text_y -= line_height
+
+        draw_box(margin, "Company", company_lines)
+        draw_box(margin + box_width + gap, "Employee", employee_lines)
+        c.setStrokeColorRGB(0, 0, 0)
+        c.setLineWidth(1)
+        return y_top - box_height - 16
+
+    def draw_header(full: bool) -> float:
+        y = page_height - margin
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(margin, y, settings.employer_legal_name)
+        c.setFont("Helvetica-Bold", 14)
+        c.drawRightString(content_right, y, "EARNINGS STATEMENT")
         y -= 16
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(x_left, y, "Description")
-        c.drawString(x_left + 250, y, "Hours")
-        c.drawString(x_left + 320, y, "Rate")
-        c.drawString(x_left + 400, y, "Amount")
-        y -= 8
-        c.line(x_left, y, page_width - x_left, y)
-        y -= 14
+        c.setFont("Helvetica", 9)
+        c.drawRightString(
+            content_right,
+            y,
+            f"Pay period: {paystub.pay_period_start} - {paystub.pay_period_end}",
+        )
+        y -= 12
+        c.drawRightString(content_right, y, f"Pay date: {paystub.pay_date}")
+        y -= 10
+        c.setStrokeColorRGB(*light_gray)
+        c.setLineWidth(0.7)
+        c.line(margin, y, content_right, y)
+        y -= 16
+        if full:
+            y = draw_info_boxes(y)
+        c.setStrokeColorRGB(0, 0, 0)
+        c.setLineWidth(1)
+        return y
 
-    def draw_deductions_header():
-        nonlocal y
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(x_left, y, "Deductions")
-        y -= 14
-
-    def ensure_space(lines=1, title_suffix="", on_new_page=None):
-        nonlocal y
-        if y < 80 + (lines * 14):
+    def ensure_space(current_y: float, required_height: float, on_new_page=None) -> float:
+        if current_y - required_height < footer_height + 20:
             draw_footer()
             c.showPage()
-            draw_header(title_suffix=title_suffix)
+            current_y = draw_header(full=False)
             if on_new_page:
-                on_new_page()
-            return True
-        return False
+                current_y = on_new_page(current_y)
+            return current_y
+        return current_y
 
-    draw_header()
-    draw_earnings_header()
+    def draw_section_title(title: str, current_y: float) -> float:
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(margin, current_y, title)
+        current_y -= 6
+        c.setStrokeColorRGB(*section_color)
+        c.setLineWidth(1)
+        c.line(margin, current_y, content_right, current_y)
+        c.setStrokeColorRGB(0, 0, 0)
+        c.setLineWidth(1)
+        return current_y - 10
 
-    c.setFont("Helvetica", 10)
+    def draw_earnings_header(current_y: float, continued: bool = False) -> float:
+        title = "Employee Earnings"
+        if continued:
+            title += " (continued)"
+        current_y = draw_section_title(title, current_y)
+        c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(margin, current_y, "Description")
+        c.drawRightString(margin + 300, current_y, "Hours")
+        c.drawRightString(margin + 380, current_y, "Rate")
+        c.drawRightString(content_right, current_y, "Amount")
+        current_y -= 6
+        c.setStrokeColorRGB(*light_gray)
+        c.setLineWidth(0.7)
+        c.line(margin, current_y, content_right, current_y)
+        c.setStrokeColorRGB(0, 0, 0)
+        return current_y - 10
+
+    def draw_deductions_header(current_y: float, continued: bool = False) -> float:
+        title = "Employee Deductions"
+        if continued:
+            title += " (continued)"
+        current_y = draw_section_title(title, current_y)
+        c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(margin, current_y, "Description")
+        c.drawRightString(content_right, current_y, "Amount")
+        current_y -= 6
+        c.setStrokeColorRGB(*light_gray)
+        c.setLineWidth(0.7)
+        c.line(margin, current_y, content_right, current_y)
+        c.setStrokeColorRGB(0, 0, 0)
+        return current_y - 10
+
+    def draw_summary_header(current_y: float, continued: bool = False) -> float:
+        title = "Summary"
+        if continued:
+            title += " (continued)"
+        current_y = draw_section_title(title, current_y)
+        c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(margin, current_y, "Description")
+        c.drawRightString(content_right, current_y, "Amount")
+        current_y -= 6
+        c.setStrokeColorRGB(*light_gray)
+        c.setLineWidth(0.7)
+        c.line(margin, current_y, content_right, current_y)
+        c.setStrokeColorRGB(0, 0, 0)
+        return current_y - 10
+
+    y = draw_header(full=True)
+
+    y = ensure_space(y, 70)
+    y = draw_earnings_header(y)
+    c.setFont("Helvetica", 9)
     for item in earnings:
-        ensure_space(on_new_page=draw_earnings_header, title_suffix=" (continued)")
+        y = ensure_space(y, 16, on_new_page=lambda new_y: draw_earnings_header(new_y, True))
         line = item or {}
         description = str(line.get("label") or "Earnings")
         hours = line.get("hours")
         rate = line.get("rate")
         amount = line.get("amount")
+        c.drawString(margin, y, description)
+        c.drawRightString(margin + 300, y, format_number(hours))
+        c.drawRightString(margin + 380, y, format_currency(rate) if isinstance(rate, (int, float)) else "-")
+        c.drawRightString(content_right, y, format_currency(amount))
+        y -= 12
 
-        c.drawString(x_left, y, description)
-        c.drawRightString(x_left + 300, y, f"{hours:.2f}" if isinstance(hours, (int, float)) else "-")
-        c.drawRightString(x_left + 370, y, f"${rate:,.2f}" if isinstance(rate, (int, float)) else "-")
-        c.drawRightString(page_width - x_left, y, f"${as_amount(amount):,.2f}")
-        y -= 16
-
-    ensure_space(lines=3, on_new_page=draw_earnings_header, title_suffix=" (continued)")
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(x_left, y, "Gross Pay")
-    c.drawRightString(page_width - x_left, y, f"${gross_pay:,.2f}")
-    y -= 16
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(margin, y, "Gross Pay")
+    c.drawRightString(content_right, y, format_currency(gross_pay))
+    y -= 18
 
     if deductions:
-        did_break = ensure_space(lines=2, on_new_page=draw_deductions_header, title_suffix=" (continued)")
-        if not did_break:
-            draw_deductions_header()
-        c.setFont("Helvetica", 10)
+        y = ensure_space(y, 60)
+        y = draw_deductions_header(y)
+        c.setFont("Helvetica", 9)
         for item in deductions:
-            ensure_space(on_new_page=draw_deductions_header, title_suffix=" (continued)")
+            y = ensure_space(y, 16, on_new_page=lambda new_y: draw_deductions_header(new_y, True))
             line = item or {}
             label = str(line.get("label") or "Deduction")
-            amount = as_amount(line.get("amount"))
-            c.drawString(x_left, y, label)
-            c.drawRightString(page_width - x_left, y, f"${amount:,.2f}")
-            y -= 14
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(x_left, y, "Total Deductions")
-        c.drawRightString(page_width - x_left, y, f"${total_deductions:,.2f}")
+            amount = line.get("amount")
+            c.drawString(margin, y, label)
+            c.drawRightString(content_right, y, format_currency(amount))
+            y -= 12
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(margin, y, "Total Deductions")
+        c.drawRightString(content_right, y, format_currency(total_deductions))
         y -= 18
     else:
         y -= 8
 
-    ensure_space(lines=2)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(x_left, y, "Net Pay")
-    c.drawRightString(page_width - x_left, y, f"${net_pay:,.2f}")
+    y = ensure_space(y, 50)
+    y = draw_summary_header(y)
+    summary_rows = [
+        ("Gross Earnings", gross_pay),
+        ("Total Deductions", total_deductions),
+        ("Net Pay", net_pay),
+    ]
+    for label, amount in summary_rows:
+        y = ensure_space(y, 16, on_new_page=lambda new_y: draw_summary_header(new_y, True))
+        if label == "Net Pay":
+            c.setFont("Helvetica-Bold", 9)
+        else:
+            c.setFont("Helvetica", 9)
+        c.drawString(margin, y, label)
+        c.drawRightString(content_right, y, format_currency(amount))
+        y -= 12
 
     draw_footer()
     c.showPage()
