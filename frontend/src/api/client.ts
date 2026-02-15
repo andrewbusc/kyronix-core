@@ -132,6 +132,11 @@ export async function generatePaystubPdf(payload: unknown) {
   return { blob, filename };
 }
 
+export async function listPaystubTemplates() {
+  const response = await apiRequest("/api/v1/paystubs/templates");
+  return response.json();
+}
+
 export async function listUsers() {
   const response = await apiRequest("/api/users");
   return response.json();

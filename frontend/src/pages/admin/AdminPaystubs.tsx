@@ -4,6 +4,7 @@ import {
   deletePaystub,
   downloadPaystubPdf,
   generatePaystubPdf,
+  listPaystubTemplates,
   listPaystubsForUser,
   listUsers,
   uploadPaystub,
@@ -37,6 +38,10 @@ type DeductionLine = {
   deduction_name: string;
   current_amount: number;
   ytd_amount: number;
+  category?:
+    | "Statutory Deductions"
+    | "Voluntary Deductions"
+    | "Net Pay Adjustments";
 };
 
 type TotalsLine = {
@@ -63,6 +68,36 @@ type PaystubDraft = {
     sick_used: number;
     sick_balance: number;
   };
+};
+
+type PaystubTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  sections: string[];
+};
+
+type PaystubTemplateListResponse = {
+  items: PaystubTemplate[];
+};
+
+type AdpBenefitLine = {
+  description: string;
+  current_amount: string;
+  ytd_amount: string;
+};
+
+type AdpDepositLine = {
+  account_type: string;
+  account_number_masked: string;
+  transit_aba_masked: string;
+  amount: string;
+};
+
+type AdpNetAdjustmentLine = {
+  description: string;
+  current_amount: string;
+  ytd_amount: string;
 };
 
 const FEDERAL_BRACKETS = [
@@ -96,6 +131,22 @@ const roundCurrency = (value: number) => Math.round((value + Number.EPSILON) * 1
 const parseNumber = (value: string) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const parseOptionalNumber = (value: string) => {
+  if (!value.trim()) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseOptionalInteger = (value: string) => {
+  if (!value.trim()) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const parseDate = (value: string) => {
@@ -182,6 +233,8 @@ const formatEmployeeNumber = (value: number | string) => {
 
 export default function AdminPaystubs() {
   const [users, setUsers] = useState<User[]>([]);
+  const [templates, setTemplates] = useState<PaystubTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -248,13 +301,59 @@ export default function AdminPaystubs() {
   const [yearEndBonusRate, setYearEndBonusRate] = useState("0");
   const [rate401k, setRate401k] = useState("5");
 
+  const [adpCompanyCode, setAdpCompanyCode] = useState("RT / XES");
+  const [adpLocationDepartment, setAdpLocationDepartment] = useState("01/8742");
+  const [adpCheckNumber, setAdpCheckNumber] = useState("");
+  const [adpMaritalStatus, setAdpMaritalStatus] = useState("Married");
+  const [adpFederalAllowances, setAdpFederalAllowances] = useState("3");
+  const [adpStateAllowances, setAdpStateAllowances] = useState("3");
+  const [adpLocalAllowances, setAdpLocalAllowances] = useState("0");
+  const [adpFederalTaxOverride, setAdpFederalTaxOverride] = useState("");
+  const [adpStateTaxOverride, setAdpStateTaxOverride] = useState("");
+  const [adpLocalTaxOverride, setAdpLocalTaxOverride] = useState("");
+  const [adpSsnMasked, setAdpSsnMasked] = useState("XXX-XX-0000");
+  const [adpAddressLine1, setAdpAddressLine1] = useState("");
+  const [adpAddressLine2, setAdpAddressLine2] = useState("");
+  const [adpAddressLine3, setAdpAddressLine3] = useState("");
+  const [adpFederalTaxableWages, setAdpFederalTaxableWages] = useState("");
+  const [adpExclusionNote, setAdpExclusionNote] = useState("* Excluded from Federal taxable wages");
+  const [adpBenefits, setAdpBenefits] = useState<AdpBenefitLine[]>([
+    { description: "Personal - Carry Over", current_amount: "", ytd_amount: "" },
+    { description: "Personal - Accrued Hours", current_amount: "", ytd_amount: "" },
+    { description: "Personal - Taken Hours", current_amount: "", ytd_amount: "" },
+    { description: "Personal - Balance", current_amount: "", ytd_amount: "" },
+  ]);
+  const [adpDeposits, setAdpDeposits] = useState<AdpDepositLine[]>([
+    {
+      account_type: "Checking DirectDeposit",
+      account_number_masked: "XXXXXX1881",
+      transit_aba_masked: "XXXXXXXXX",
+      amount: "",
+    },
+  ]);
+  const [adpNetAdjustments, setAdpNetAdjustments] = useState<AdpNetAdjustmentLine[]>([
+    { description: "*Misc reimbursement", current_amount: "", ytd_amount: "" },
+  ]);
+
   useEffect(() => {
-    listUsers()
-      .then((data) => setUsers(data))
+    Promise.all([
+      listUsers(),
+      listPaystubTemplates() as Promise<PaystubTemplateListResponse>,
+    ])
+      .then(([userData, templateData]) => {
+        setUsers(userData);
+        setTemplates(templateData.items || []);
+      })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Unable to load employees");
+        setError(err instanceof Error ? err.message : "Unable to load employees or templates");
       });
   }, []);
+
+  useEffect(() => {
+    if (!selectedTemplateId && templates.length > 0) {
+      setSelectedTemplateId(templates[0].id);
+    }
+  }, [selectedTemplateId, templates]);
 
   useEffect(() => {
     const selected = users.find((entry) => `${entry.id}` === selectedUserId);
@@ -266,6 +365,13 @@ export default function AdminPaystubs() {
     setJobTitle(selected.job_title);
     setDepartment(selected.department);
     setHireDate(selected.hire_date);
+    setAdpAddressLine1(`${selected.address_line1}`);
+    setAdpAddressLine2(
+      selected.address_line2 ? `${selected.address_line2}` : `${selected.city}, ${selected.state} ${selected.postal_code}`
+    );
+    setAdpAddressLine3(
+      selected.address_line2 ? `${selected.city}, ${selected.state} ${selected.postal_code}` : ""
+    );
   }, [selectedUserId, users]);
 
   useEffect(() => {
@@ -299,6 +405,14 @@ export default function AdminPaystubs() {
     const parsed = Number(historyYear);
     return Number.isNaN(parsed) ? undefined : parsed;
   }, [historyYear]);
+
+  const selectedTemplate = useMemo(
+    () => templates.find((entry) => entry.id === selectedTemplateId) ?? null,
+    [templates, selectedTemplateId]
+  );
+
+  const hasTemplateSection = (section: string) =>
+    selectedTemplate?.sections.includes(section) ?? false;
 
   useEffect(() => {
     if (payType === "CONTRACTOR") {
@@ -440,10 +554,11 @@ export default function AdminPaystubs() {
         preTaxSdi,
         deductionsBase: [
           ...(include401k && payType === "SALARY"
-            ? [
+          ? [
                 {
                   deduction_name: "401(k) Contribution",
                   current_amount: preTax401k,
+                  category: "Voluntary Deductions" as const,
                 },
               ]
             : []),
@@ -452,6 +567,7 @@ export default function AdminPaystubs() {
                 {
                   deduction_name: "Health Plan",
                   current_amount: preTaxHealth,
+                  category: "Voluntary Deductions" as const,
                 },
               ]
             : []),
@@ -462,6 +578,7 @@ export default function AdminPaystubs() {
                   current_amount: roundCurrency(
                     (grossPayCurrent * parseNumber(contractorFeeRate)) / 100
                   ),
+                  category: "Voluntary Deductions" as const,
                 },
               ]
             : []),
@@ -527,24 +644,28 @@ export default function AdminPaystubs() {
           deductionsBase.push({
             deduction_name: "Federal Income Tax",
             current_amount: roundCurrency((taxableFederal * federalRate) / 100),
+            category: "Statutory Deductions",
           });
         }
         if (includeSocialSecurity) {
           deductionsBase.push({
             deduction_name: "Social Security",
             current_amount: roundCurrency((taxableFica * parseNumber(ssRate)) / 100),
+            category: "Statutory Deductions",
           });
         }
         if (includeMedicare) {
           deductionsBase.push({
             deduction_name: "Medicare",
             current_amount: roundCurrency((taxableFica * parseNumber(medicareRate)) / 100),
+            category: "Statutory Deductions",
           });
         }
         if (includeSdi) {
           deductionsBase.push({
             deduction_name: "State Disability (SDI)",
             current_amount: roundCurrency((taxableSdi * parseNumber(sdiRate)) / 100),
+            category: "Statutory Deductions",
           });
         }
 
@@ -555,6 +676,7 @@ export default function AdminPaystubs() {
           deductionsBase.push({
             deduction_name: "State Income Tax (PIT)",
             current_amount: roundCurrency(pitCurrent),
+            category: "Statutory Deductions",
           });
           ytd.pitTaxable = roundCurrency(ytd.pitTaxable + taxableFederal);
         }
@@ -769,6 +891,10 @@ export default function AdminPaystubs() {
     setError(null);
     setStatus(null);
 
+    if (!selectedTemplateId) {
+      setError("Select a paystub template first.");
+      return;
+    }
     if (!employeeName || !jobTitle || !department) {
       setError("Select an employee and confirm the job title and department.");
       return;
@@ -798,6 +924,7 @@ export default function AdminPaystubs() {
 
     const payTypeValue = payType === "SALARY" ? "Salary" : "Hourly";
     const employmentTypeValue = payType === "CONTRACTOR" ? "Contractor" : employmentType;
+    const adpTemplateSelected = selectedTemplateId === "adp_classic_v1";
 
     setIsGenerating(true);
     setProgress({ current: 0, total: computed.paystubs.length });
@@ -808,7 +935,34 @@ export default function AdminPaystubs() {
         if (!payDateObj) {
           continue;
         }
+        const adpBenefitsPayload = adpBenefits
+          .filter((entry) => entry.description.trim())
+          .map((entry) => ({
+            description: entry.description.trim(),
+            current_amount: parseOptionalNumber(entry.current_amount),
+            ytd_amount: parseOptionalNumber(entry.ytd_amount),
+          }));
+        const adpDepositsPayload = adpDeposits
+          .filter((entry) => entry.account_number_masked.trim() && parseNumber(entry.amount) > 0)
+          .map((entry) => ({
+            account_type: entry.account_type.trim() || null,
+            account_number_masked: entry.account_number_masked.trim(),
+            transit_aba_masked: entry.transit_aba_masked.trim() || null,
+            amount: parseNumber(entry.amount),
+          }));
+        const adpNetAdjustmentsPayload = adpNetAdjustments
+          .filter((entry) => entry.description.trim())
+          .map((entry) => ({
+            description: entry.description.trim(),
+            current_amount: parseNumber(entry.current_amount),
+            ytd_amount: parseNumber(entry.ytd_amount),
+          }));
+        const adpAddressLines = [adpAddressLine1, adpAddressLine2, adpAddressLine3]
+          .map((line) => line.trim())
+          .filter(Boolean);
+
         const payload = {
+          template_id: selectedTemplateId,
           company: {
             company_name: "Kyronix LLC",
             company_logo_url: companyLogoUrl || null,
@@ -842,7 +996,35 @@ export default function AdminPaystubs() {
             paystub_id: `ps_${employeeId || selected.id}_${formatCompactDate(payDateObj)}`,
             generated_timestamp: new Date().toISOString(),
           },
-          leave_balances: paystub.leave_balances ?? null,
+          leave_balances:
+            hasTemplateSection("leave_balances") && paystub.leave_balances
+              ? paystub.leave_balances
+              : null,
+          template_data: adpTemplateSelected
+            ? {
+                adp_classic: {
+                  tax_profile: {
+                    company_code: adpCompanyCode || null,
+                    location_department: adpLocationDepartment || null,
+                    check_number: adpCheckNumber || null,
+                    marital_status: adpMaritalStatus || "Not provided",
+                    federal_allowances: parseOptionalInteger(adpFederalAllowances),
+                    state_allowances: parseOptionalInteger(adpStateAllowances),
+                    local_allowances: parseOptionalInteger(adpLocalAllowances),
+                    federal_tax_override: adpFederalTaxOverride || null,
+                    state_tax_override: adpStateTaxOverride || null,
+                    local_tax_override: adpLocalTaxOverride || null,
+                    social_security_number_masked: adpSsnMasked || null,
+                    employee_address_lines: adpAddressLines,
+                  },
+                  other_benefits: adpBenefitsPayload,
+                  deposits: adpDepositsPayload,
+                  net_pay_adjustments: adpNetAdjustmentsPayload,
+                  federal_taxable_wages_current: parseOptionalNumber(adpFederalTaxableWages),
+                  exclusion_note: adpExclusionNote || null,
+                },
+              }
+            : null,
         };
 
         const { blob, filename } = await generatePaystubPdf(payload);
@@ -869,6 +1051,43 @@ export default function AdminPaystubs() {
   const annualizedPay =
     payType === "SALARY" ? annualSalaryValue : roundCurrency(hourlyRateValue * 2080);
   const federalRate = getFederalRate(annualizedPay);
+  const adpTemplateSelected = selectedTemplateId === "adp_classic_v1";
+
+  const updateAdpBenefit = (
+    index: number,
+    key: keyof AdpBenefitLine,
+    value: string
+  ) => {
+    setAdpBenefits((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, [key]: value } : entry
+      )
+    );
+  };
+
+  const updateAdpDeposit = (
+    index: number,
+    key: keyof AdpDepositLine,
+    value: string
+  ) => {
+    setAdpDeposits((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, [key]: value } : entry
+      )
+    );
+  };
+
+  const updateAdpNetAdjustment = (
+    index: number,
+    key: keyof AdpNetAdjustmentLine,
+    value: string
+  ) => {
+    setAdpNetAdjustments((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, [key]: value } : entry
+      )
+    );
+  };
 
   return (
     <>
@@ -892,6 +1111,32 @@ export default function AdminPaystubs() {
         <p style={{ marginTop: 6, color: "rgba(11, 31, 42, 0.6)" }}>
           Generate paystubs from standardized rules. All files are produced as PDFs.
         </p>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>1. Choose template</h3>
+        <p style={{ marginTop: 6, color: "rgba(11, 31, 42, 0.6)" }}>
+          Select the template first. The form below will adapt to that template.
+        </p>
+        <div className="grid">
+          <select
+            className="input"
+            value={selectedTemplateId}
+            onChange={(event) => setSelectedTemplateId(event.target.value)}
+          >
+            <option value="">Select paystub template</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+          {selectedTemplate && (
+            <div style={{ fontSize: "0.9rem", color: "rgba(11, 31, 42, 0.72)" }}>
+              {selectedTemplate.description}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="card">
@@ -1091,309 +1336,594 @@ export default function AdminPaystubs() {
         </div>
       </div>
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Pay rules</h3>
-        <div className="grid">
-          <div className="row">
-            <select
-              className="input"
-              value={payType}
-              onChange={(event) => setPayType(event.target.value as PayType)}
-            >
-              <option value="SALARY">Salary</option>
-              <option value="HOURLY">Hourly</option>
-              <option value="CONTRACTOR">Contractor</option>
-            </select>
-            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-              Most recent pay date
-              <input
-                className="input"
-                type="date"
-                value={mostRecentPayDate}
-                onChange={(event) => setMostRecentPayDate(event.target.value)}
-              />
-            </label>
-          </div>
-          <div className="row">
-            <input
-              className="input"
-              placeholder="Number of paystubs to generate"
-              type="number"
-              min="1"
-              value={paystubCount}
-              onChange={(event) => setPaystubCount(event.target.value)}
-            />
-            <input className="input" value="Bi-Weekly (Mon-Sun)" readOnly />
-          </div>
-
-          {payType === "SALARY" && (
+      {hasTemplateSection("pay_rules") && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Pay rules</h3>
+          <div className="grid">
             <div className="row">
-              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                Annual salary
-                <input
-                  className="input"
-                  type="number"
-                  value={annualSalary}
-                  onChange={(event) => setAnnualSalary(event.target.value)}
-                />
-              </label>
-              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                Standard hours per pay period
-                <input className="input" value="80" readOnly />
-              </label>
-            </div>
-          )}
-
-          {payType !== "SALARY" && (
-            <div className="row">
-              <input
-                className="input"
-                placeholder="Hourly rate"
-                type="number"
-                value={hourlyRate}
-                onChange={(event) => setHourlyRate(event.target.value)}
-              />
-              <input
-                className="input"
-                placeholder="Hours worked (per pay period)"
-                type="number"
-                value={hoursWorked}
-                onChange={(event) => setHoursWorked(event.target.value)}
-              />
-            </div>
-          )}
-
-          {payType === "SALARY" && (
-            <div className="row">
-              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                Year-end bonus rate (%)
-                <input
-                  className="input"
-                  type="number"
-                  value={yearEndBonusRate}
-                  onChange={(event) => setYearEndBonusRate(event.target.value)}
-                />
-              </label>
-              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                Bonus timing
-                <input
-                  className="input"
-                  value="Last pay date of the year (based on actual salary earned)"
-                  readOnly
-                />
-              </label>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Deductions</h3>
-        <div className="grid">
-          <label className="row" style={{ alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={includeFederal}
-              onChange={(event) => setIncludeFederal(event.target.checked)}
-              disabled={payType === "CONTRACTOR"}
-            />
-            Federal Income Tax ({federalRate}%)
-          </label>
-          <div className="row">
-            <label className="row" style={{ alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={includeSocialSecurity}
-                onChange={(event) => setIncludeSocialSecurity(event.target.checked)}
-                disabled={payType === "CONTRACTOR"}
-              />
-              Social Security (%)
-            </label>
-            <input
-              className="input"
-              type="number"
-              value={ssRate}
-              onChange={(event) => setSsRate(event.target.value)}
-              disabled={!includeSocialSecurity || payType === "CONTRACTOR"}
-            />
-          </div>
-          <div className="row">
-            <label className="row" style={{ alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={includeMedicare}
-                onChange={(event) => setIncludeMedicare(event.target.checked)}
-                disabled={payType === "CONTRACTOR"}
-              />
-              Medicare (%)
-            </label>
-            <input
-              className="input"
-              type="number"
-              value={medicareRate}
-              onChange={(event) => setMedicareRate(event.target.value)}
-              disabled={!includeMedicare || payType === "CONTRACTOR"}
-            />
-          </div>
-          <div className="row">
-            <label className="row" style={{ alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={includePit}
-                onChange={(event) => setIncludePit(event.target.checked)}
-                disabled={payType === "CONTRACTOR"}
-              />
-              State Income Tax (PIT) - CA 2026 Single (progressive)
-            </label>
-            <input
-              className="input"
-              type="number"
-              value={pitRate}
-              onChange={(event) => setPitRate(event.target.value)}
-              readOnly
-              disabled={!includePit || payType === "CONTRACTOR"}
-            />
-          </div>
-          <div className="row">
-            <label className="row" style={{ alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={includeSdi}
-                onChange={(event) => setIncludeSdi(event.target.checked)}
-                disabled={payType === "CONTRACTOR"}
-              />
-              State Disability (SDI) (%)
-            </label>
-            <input
-              className="input"
-              type="number"
-              value={sdiRate}
-              onChange={(event) => setSdiRate(event.target.value)}
-              disabled={!includeSdi || payType === "CONTRACTOR"}
-            />
-          </div>
-          <div className="row">
-            <label className="row" style={{ alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={includeHealth}
-                onChange={(event) => setIncludeHealth(event.target.checked)}
-                disabled={payType === "CONTRACTOR"}
-              />
-              Health Plan (per pay period)
-            </label>
-            <input
-              className="input"
-              type="number"
-              value={healthAmount}
-              onChange={(event) => setHealthAmount(event.target.value)}
-              disabled={!includeHealth || payType === "CONTRACTOR"}
-            />
-          </div>
-          {payType === "SALARY" && (
-            <div className="row">
-              <label className="row" style={{ alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={include401k}
-                  onChange={(event) => setInclude401k(event.target.checked)}
-                />
-                401(k) Contribution (% of gross, match noted)
-              </label>
-              <input
-                className="input"
-                type="number"
-                value={rate401k}
-                onChange={(event) => setRate401k(event.target.value)}
-                disabled={!include401k}
-              />
-            </div>
-          )}
-          {payType === "CONTRACTOR" && (
-            <div className="row">
-              <label className="row" style={{ alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={includeContractorFee}
-                  onChange={(event) => setIncludeContractorFee(event.target.checked)}
-                />
-                Contractor fee (%)
-              </label>
-              <input
-                className="input"
-                type="number"
-                value={contractorFeeRate}
-                onChange={(event) => setContractorFeeRate(event.target.value)}
-                disabled={!includeContractorFee}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Payment + company details</h3>
-        <div className="grid">
-          <div className="row">
-            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-              Payment method
               <select
                 className="input"
-                value={paymentMethod}
-                onChange={(event) =>
-                  setPaymentMethod(event.target.value as "Direct Deposit" | "Check")
-                }
+                value={payType}
+                onChange={(event) => setPayType(event.target.value as PayType)}
               >
-                <option value="Direct Deposit">Direct Deposit</option>
-                <option value="Check">Check</option>
+                <option value="SALARY">Salary</option>
+                <option value="HOURLY">Hourly</option>
+                <option value="CONTRACTOR">Contractor</option>
               </select>
-            </label>
-            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-              Payment status
+              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                Most recent pay date
+                <input
+                  className="input"
+                  type="date"
+                  value={mostRecentPayDate}
+                  onChange={(event) => setMostRecentPayDate(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="row">
               <input
                 className="input"
-                value={paymentStatus}
-                onChange={(event) => setPaymentStatus(event.target.value)}
+                placeholder="Number of paystubs to generate"
+                type="number"
+                min="1"
+                value={paystubCount}
+                onChange={(event) => setPaystubCount(event.target.value)}
               />
-            </label>
+              <input className="input" value="Bi-Weekly (Mon-Sun)" readOnly />
+            </div>
+
+            {payType === "SALARY" && (
+              <div className="row">
+                <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                  Annual salary
+                  <input
+                    className="input"
+                    type="number"
+                    value={annualSalary}
+                    onChange={(event) => setAnnualSalary(event.target.value)}
+                  />
+                </label>
+                <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                  Standard hours per pay period
+                  <input className="input" value="80" readOnly />
+                </label>
+              </div>
+            )}
+
+            {payType !== "SALARY" && (
+              <div className="row">
+                <input
+                  className="input"
+                  placeholder="Hourly rate"
+                  type="number"
+                  value={hourlyRate}
+                  onChange={(event) => setHourlyRate(event.target.value)}
+                />
+                <input
+                  className="input"
+                  placeholder="Hours worked (per pay period)"
+                  type="number"
+                  value={hoursWorked}
+                  onChange={(event) => setHoursWorked(event.target.value)}
+                />
+              </div>
+            )}
+
+            {payType === "SALARY" && (
+              <div className="row">
+                <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                  Year-end bonus rate (%)
+                  <input
+                    className="input"
+                    type="number"
+                    value={yearEndBonusRate}
+                    onChange={(event) => setYearEndBonusRate(event.target.value)}
+                  />
+                </label>
+                <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                  Bonus timing
+                  <input
+                    className="input"
+                    value="Last pay date of the year (based on actual salary earned)"
+                    readOnly
+                  />
+                </label>
+              </div>
+            )}
           </div>
-          <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-            Bank name (masked)
-            <input
-              className="input"
-              value={bankMasked}
-              onChange={(event) => setBankMasked(event.target.value)}
-            />
-          </label>
-          <div className="row">
-            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-              Company address
-              <input
-                className="input"
-                value={companyAddress}
-                onChange={(event) => setCompanyAddress(event.target.value)}
-              />
-            </label>
-            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-              Payroll contact email
-              <input
-                className="input"
-                type="email"
-                value={payrollEmail}
-                onChange={(event) => setPayrollEmail(event.target.value)}
-              />
-            </label>
-          </div>
-          <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-            Company logo URL (optional)
-            <input
-              className="input"
-              value={companyLogoUrl}
-              onChange={(event) => setCompanyLogoUrl(event.target.value)}
-            />
-          </label>
         </div>
-      </div>
+      )}
+
+      {hasTemplateSection("deductions") && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Deductions</h3>
+          <div className="grid">
+            <label className="row" style={{ alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={includeFederal}
+                onChange={(event) => setIncludeFederal(event.target.checked)}
+                disabled={payType === "CONTRACTOR"}
+              />
+              Federal Income Tax ({federalRate}%)
+            </label>
+            <div className="row">
+              <label className="row" style={{ alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={includeSocialSecurity}
+                  onChange={(event) => setIncludeSocialSecurity(event.target.checked)}
+                  disabled={payType === "CONTRACTOR"}
+                />
+                Social Security (%)
+              </label>
+              <input
+                className="input"
+                type="number"
+                value={ssRate}
+                onChange={(event) => setSsRate(event.target.value)}
+                disabled={!includeSocialSecurity || payType === "CONTRACTOR"}
+              />
+            </div>
+            <div className="row">
+              <label className="row" style={{ alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={includeMedicare}
+                  onChange={(event) => setIncludeMedicare(event.target.checked)}
+                  disabled={payType === "CONTRACTOR"}
+                />
+                Medicare (%)
+              </label>
+              <input
+                className="input"
+                type="number"
+                value={medicareRate}
+                onChange={(event) => setMedicareRate(event.target.value)}
+                disabled={!includeMedicare || payType === "CONTRACTOR"}
+              />
+            </div>
+            <div className="row">
+              <label className="row" style={{ alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={includePit}
+                  onChange={(event) => setIncludePit(event.target.checked)}
+                  disabled={payType === "CONTRACTOR"}
+                />
+                State Income Tax (PIT) - CA 2026 Single (progressive)
+              </label>
+              <input
+                className="input"
+                type="number"
+                value={pitRate}
+                onChange={(event) => setPitRate(event.target.value)}
+                readOnly
+                disabled={!includePit || payType === "CONTRACTOR"}
+              />
+            </div>
+            <div className="row">
+              <label className="row" style={{ alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={includeSdi}
+                  onChange={(event) => setIncludeSdi(event.target.checked)}
+                  disabled={payType === "CONTRACTOR"}
+                />
+                State Disability (SDI) (%)
+              </label>
+              <input
+                className="input"
+                type="number"
+                value={sdiRate}
+                onChange={(event) => setSdiRate(event.target.value)}
+                disabled={!includeSdi || payType === "CONTRACTOR"}
+              />
+            </div>
+            <div className="row">
+              <label className="row" style={{ alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={includeHealth}
+                  onChange={(event) => setIncludeHealth(event.target.checked)}
+                  disabled={payType === "CONTRACTOR"}
+                />
+                Health Plan (per pay period)
+              </label>
+              <input
+                className="input"
+                type="number"
+                value={healthAmount}
+                onChange={(event) => setHealthAmount(event.target.value)}
+                disabled={!includeHealth || payType === "CONTRACTOR"}
+              />
+            </div>
+            {payType === "SALARY" && (
+              <div className="row">
+                <label className="row" style={{ alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={include401k}
+                    onChange={(event) => setInclude401k(event.target.checked)}
+                  />
+                  401(k) Contribution (% of gross, match noted)
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  value={rate401k}
+                  onChange={(event) => setRate401k(event.target.value)}
+                  disabled={!include401k}
+                />
+              </div>
+            )}
+            {payType === "CONTRACTOR" && (
+              <div className="row">
+                <label className="row" style={{ alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={includeContractorFee}
+                    onChange={(event) => setIncludeContractorFee(event.target.checked)}
+                  />
+                  Contractor fee (%)
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  value={contractorFeeRate}
+                  onChange={(event) => setContractorFeeRate(event.target.value)}
+                  disabled={!includeContractorFee}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {hasTemplateSection("payment_company") && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Payment + company details</h3>
+          <div className="grid">
+            <div className="row">
+              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                Payment method
+                <select
+                  className="input"
+                  value={paymentMethod}
+                  onChange={(event) =>
+                    setPaymentMethod(event.target.value as "Direct Deposit" | "Check")
+                  }
+                >
+                  <option value="Direct Deposit">Direct Deposit</option>
+                  <option value="Check">Check</option>
+                </select>
+              </label>
+              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                Payment status
+                <input
+                  className="input"
+                  value={paymentStatus}
+                  onChange={(event) => setPaymentStatus(event.target.value)}
+                />
+              </label>
+            </div>
+            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+              Bank name (masked)
+              <input
+                className="input"
+                value={bankMasked}
+                onChange={(event) => setBankMasked(event.target.value)}
+              />
+            </label>
+            <div className="row">
+              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                Company address
+                <input
+                  className="input"
+                  value={companyAddress}
+                  onChange={(event) => setCompanyAddress(event.target.value)}
+                />
+              </label>
+              <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                Payroll contact email
+                <input
+                  className="input"
+                  type="email"
+                  value={payrollEmail}
+                  onChange={(event) => setPayrollEmail(event.target.value)}
+                />
+              </label>
+            </div>
+            <label style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+              Company logo URL (optional)
+              <input
+                className="input"
+                value={companyLogoUrl}
+                onChange={(event) => setCompanyLogoUrl(event.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
+      {adpTemplateSelected && hasTemplateSection("tax_profile") && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Template fields: tax profile</h3>
+          <div className="grid">
+            <div className="row">
+              <input
+                className="input"
+                placeholder="Company code"
+                value={adpCompanyCode}
+                onChange={(event) => setAdpCompanyCode(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Loc/Dept"
+                value={adpLocationDepartment}
+                onChange={(event) => setAdpLocationDepartment(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Check number"
+                value={adpCheckNumber}
+                onChange={(event) => setAdpCheckNumber(event.target.value)}
+              />
+            </div>
+            <div className="row">
+              <input
+                className="input"
+                placeholder="Marital status"
+                value={adpMaritalStatus}
+                onChange={(event) => setAdpMaritalStatus(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Federal allowances"
+                value={adpFederalAllowances}
+                onChange={(event) => setAdpFederalAllowances(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="State allowances"
+                value={adpStateAllowances}
+                onChange={(event) => setAdpStateAllowances(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Local allowances"
+                value={adpLocalAllowances}
+                onChange={(event) => setAdpLocalAllowances(event.target.value)}
+              />
+            </div>
+            <div className="row">
+              <input
+                className="input"
+                placeholder="Federal tax override"
+                value={adpFederalTaxOverride}
+                onChange={(event) => setAdpFederalTaxOverride(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="State tax override"
+                value={adpStateTaxOverride}
+                onChange={(event) => setAdpStateTaxOverride(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Local tax override"
+                value={adpLocalTaxOverride}
+                onChange={(event) => setAdpLocalTaxOverride(event.target.value)}
+              />
+            </div>
+            <input
+              className="input"
+              placeholder="Masked SSN"
+              value={adpSsnMasked}
+              onChange={(event) => setAdpSsnMasked(event.target.value)}
+            />
+            <div className="row">
+              <input
+                className="input"
+                placeholder="Employee address line 1"
+                value={adpAddressLine1}
+                onChange={(event) => setAdpAddressLine1(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Employee address line 2"
+                value={adpAddressLine2}
+                onChange={(event) => setAdpAddressLine2(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Employee address line 3"
+                value={adpAddressLine3}
+                onChange={(event) => setAdpAddressLine3(event.target.value)}
+              />
+            </div>
+            <div className="row">
+              <input
+                className="input"
+                placeholder="Federal taxable wages (this period)"
+                value={adpFederalTaxableWages}
+                onChange={(event) => setAdpFederalTaxableWages(event.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Exclusion note"
+                value={adpExclusionNote}
+                onChange={(event) => setAdpExclusionNote(event.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adpTemplateSelected && hasTemplateSection("other_benefits") && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Template fields: other benefits + net adjustments</h3>
+          <div className="grid">
+            {adpBenefits.map((entry, index) => (
+              <div key={`benefit-${index}`} className="row">
+                <input
+                  className="input"
+                  placeholder="Benefit description"
+                  value={entry.description}
+                  onChange={(event) => updateAdpBenefit(index, "description", event.target.value)}
+                />
+                <input
+                  className="input"
+                  placeholder="This period"
+                  value={entry.current_amount}
+                  onChange={(event) => updateAdpBenefit(index, "current_amount", event.target.value)}
+                />
+                <input
+                  className="input"
+                  placeholder="Year to date"
+                  value={entry.ytd_amount}
+                  onChange={(event) => updateAdpBenefit(index, "ytd_amount", event.target.value)}
+                />
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    setAdpBenefits((current) => current.filter((_, rowIndex) => rowIndex !== index))
+                  }
+                  disabled={adpBenefits.length === 1}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              className="button secondary"
+              onClick={() =>
+                setAdpBenefits((current) => [
+                  ...current,
+                  { description: "", current_amount: "", ytd_amount: "" },
+                ])
+              }
+            >
+              Add benefit line
+            </button>
+            {adpNetAdjustments.map((entry, index) => (
+              <div key={`adjustment-${index}`} className="row">
+                <input
+                  className="input"
+                  placeholder="Net adjustment description"
+                  value={entry.description}
+                  onChange={(event) =>
+                    updateAdpNetAdjustment(index, "description", event.target.value)
+                  }
+                />
+                <input
+                  className="input"
+                  placeholder="This period"
+                  value={entry.current_amount}
+                  onChange={(event) =>
+                    updateAdpNetAdjustment(index, "current_amount", event.target.value)
+                  }
+                />
+                <input
+                  className="input"
+                  placeholder="Year to date"
+                  value={entry.ytd_amount}
+                  onChange={(event) =>
+                    updateAdpNetAdjustment(index, "ytd_amount", event.target.value)
+                  }
+                />
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    setAdpNetAdjustments((current) =>
+                      current.filter((_, rowIndex) => rowIndex !== index)
+                    )
+                  }
+                  disabled={adpNetAdjustments.length === 1}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              className="button secondary"
+              onClick={() =>
+                setAdpNetAdjustments((current) => [
+                  ...current,
+                  { description: "", current_amount: "", ytd_amount: "" },
+                ])
+              }
+            >
+              Add net adjustment line
+            </button>
+          </div>
+        </div>
+      )}
+
+      {adpTemplateSelected && hasTemplateSection("deposits") && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Template fields: deposits</h3>
+          <div className="grid">
+            {adpDeposits.map((entry, index) => (
+              <div key={`deposit-${index}`} className="row">
+                <input
+                  className="input"
+                  placeholder="Account type"
+                  value={entry.account_type}
+                  onChange={(event) => updateAdpDeposit(index, "account_type", event.target.value)}
+                />
+                <input
+                  className="input"
+                  placeholder="Account number (masked)"
+                  value={entry.account_number_masked}
+                  onChange={(event) =>
+                    updateAdpDeposit(index, "account_number_masked", event.target.value)
+                  }
+                />
+                <input
+                  className="input"
+                  placeholder="Transit/ABA (masked)"
+                  value={entry.transit_aba_masked}
+                  onChange={(event) =>
+                    updateAdpDeposit(index, "transit_aba_masked", event.target.value)
+                  }
+                />
+                <input
+                  className="input"
+                  placeholder="Amount"
+                  value={entry.amount}
+                  onChange={(event) => updateAdpDeposit(index, "amount", event.target.value)}
+                />
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    setAdpDeposits((current) => current.filter((_, rowIndex) => rowIndex !== index))
+                  }
+                  disabled={adpDeposits.length === 1}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              className="button secondary"
+              onClick={() =>
+                setAdpDeposits((current) => [
+                  ...current,
+                  {
+                    account_type: "Checking DirectDeposit",
+                    account_number_masked: "",
+                    transit_aba_masked: "",
+                    amount: "",
+                  },
+                ])
+              }
+            >
+              Add deposit line
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Preview</h3>
@@ -1407,7 +1937,7 @@ export default function AdminPaystubs() {
                   <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
                     {`${stub.pay_period_start} to ${stub.pay_period_end}`}
                   </div>
-                  {stub.leave_balances && (
+                  {hasTemplateSection("leave_balances") && stub.leave_balances && (
                     <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
                       {`Vacation: ${stub.leave_balances.vacation_balance.toFixed(
                         2

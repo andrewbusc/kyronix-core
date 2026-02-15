@@ -49,6 +49,11 @@ class DeductionItem(BaseModel):
     deduction_name: str = Field(min_length=1)
     current_amount: Decimal
     ytd_amount: Decimal
+    category: Literal[
+        "Statutory Deductions",
+        "Voluntary Deductions",
+        "Net Pay Adjustments",
+    ] | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -90,7 +95,67 @@ class MetadataInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AdpTaxProfileInfo(BaseModel):
+    company_code: str | None = None
+    location_department: str | None = None
+    check_number: str | None = None
+    marital_status: str = Field(min_length=1)
+    federal_allowances: int | None = None
+    state_allowances: int | None = None
+    local_allowances: int | None = None
+    federal_tax_override: str | None = None
+    state_tax_override: str | None = None
+    local_tax_override: str | None = None
+    social_security_number_masked: str | None = None
+    employee_address_lines: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdpBenefitItem(BaseModel):
+    description: str = Field(min_length=1)
+    current_amount: Decimal | None = None
+    ytd_amount: Decimal | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdpDepositItem(BaseModel):
+    account_type: str | None = None
+    account_number_masked: str = Field(min_length=1)
+    transit_aba_masked: str | None = None
+    amount: Decimal
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdpNetPayAdjustmentItem(BaseModel):
+    description: str = Field(min_length=1)
+    current_amount: Decimal
+    ytd_amount: Decimal
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdpClassicTemplateData(BaseModel):
+    tax_profile: AdpTaxProfileInfo
+    other_benefits: list[AdpBenefitItem] = Field(default_factory=list)
+    deposits: list[AdpDepositItem] = Field(default_factory=list)
+    net_pay_adjustments: list[AdpNetPayAdjustmentItem] = Field(default_factory=list)
+    federal_taxable_wages_current: Decimal | None = None
+    exclusion_note: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PaystubTemplateData(BaseModel):
+    adp_classic: AdpClassicTemplateData | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PaystubGenerateRequest(BaseModel):
+    template_id: str = Field(default="kyronix_v1", min_length=1)
     company: CompanyInfo
     employee: EmployeeInfo
     pay_period: PayPeriodInfo
@@ -100,5 +165,6 @@ class PaystubGenerateRequest(BaseModel):
     payment: PaymentInfo
     metadata: MetadataInfo
     leave_balances: LeaveBalancesInfo | None = None
+    template_data: PaystubTemplateData | None = None
 
     model_config = ConfigDict(extra="forbid")

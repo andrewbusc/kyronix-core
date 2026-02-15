@@ -10,7 +10,12 @@ from app.core.roles import EmploymentStatus, RoleEnum
 from app.db.models.paystub import Paystub
 from app.db.models.user import User
 from app.schemas.paystub_generate import PaystubGenerateRequest
-from app.utils.paystub_v1 import build_paystub_filename, render_paystub_v1_pdf
+from app.schemas.paystub_template import PaystubTemplateInfo, PaystubTemplateListResponse
+from app.utils.paystub_templates import (
+    get_paystub_template,
+    list_paystub_templates,
+)
+from app.utils.paystub_v1 import build_paystub_filename
 from app.utils.s3 import S3ConfigError, upload_pdf_bytes
 
 router = APIRouter()
@@ -51,6 +56,29 @@ def serialize_items(items: list) -> list[dict]:
     return [item.model_dump(mode="json") for item in items]
 
 
+@router.get("/templates", response_model=PaystubTemplateListResponse)
+def get_paystub_templates(
+    current_user: User = Depends(require_roles(RoleEnum.ADMIN)),
+):
+    if current_user.employment_status == EmploymentStatus.FORMER_EMPLOYEE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access"
+        )
+
+    templates = list_paystub_templates()
+    return PaystubTemplateListResponse(
+        items=[
+            PaystubTemplateInfo(
+                id=template.id,
+                name=template.name,
+                description=template.description,
+                sections=list(template.sections),
+            )
+            for template in templates
+        ]
+    )
+
+
 @router.post("/generate")
 def generate_paystub(
     payload: PaystubGenerateRequest,
@@ -68,8 +96,22 @@ def generate_paystub(
             detail=f"company_name must be {settings.employer_legal_name}",
         )
 
+    template = get_paystub_template(payload.template_id)
+    if template is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown template_id: {payload.template_id}",
+        )
+    if template.id == "adp_classic_v1" and (
+        payload.template_data is None or payload.template_data.adp_classic is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="template_data.adp_classic is required for adp_classic_v1",
+        )
+
     employee_user = resolve_user_for_paystub(db, payload)
-    pdf_bytes = render_paystub_v1_pdf(payload)
+    pdf_bytes = template.render_pdf(payload)
     filename = build_paystub_filename(payload)
     s3_key = (
         f"paystubs/{employee_user.id}/"
@@ -85,6 +127,7 @@ def generate_paystub(
                 "employee_id": payload.employee.employee_id,
                 "employee_name": payload.employee.employee_name,
                 "pay_date": payload.pay_period.pay_date.isoformat(),
+                "template_id": template.id,
             },
         )
     except S3ConfigError as exc:
@@ -119,6 +162,7 @@ def generate_paystub(
             "employee_id": payload.employee.employee_id,
             "employee_name": payload.employee.employee_name,
             "pay_date": payload.pay_period.pay_date.isoformat(),
+            "template_id": template.id,
         },
     )
 
