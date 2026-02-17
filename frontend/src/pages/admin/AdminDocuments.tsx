@@ -7,6 +7,7 @@ import {
   getDocument,
   listDocuments,
   listDocumentShares,
+  listUsers,
   revokeDocumentShare,
   uploadDocument,
 } from "../../api/client";
@@ -99,16 +100,32 @@ export default function AdminDocuments() {
     }
     setError(null);
     try {
+      const ownerValue = ownerId.trim();
+      let resolvedOwnerId: number;
+      if (/^\d+$/.test(ownerValue)) {
+        resolvedOwnerId = Number(ownerValue);
+      } else {
+        const users = await listUsers();
+        const match = users.find(
+          (entry: { id: number; email: string }) =>
+            entry.email.toLowerCase() === ownerValue.toLowerCase()
+        );
+        if (!match) {
+          throw new Error("Owner must be a valid user ID or exact employee email.");
+        }
+        resolvedOwnerId = match.id;
+      }
+
       if (uploadFile) {
         await uploadDocument({
           title,
           body,
-          owner_id: Number(ownerId),
+          owner_id: resolvedOwnerId,
           file: uploadFile,
           file_name: fileName || null,
         });
       } else {
-        await createDocument({ title, body, owner_id: Number(ownerId) });
+        await createDocument({ title, body, owner_id: resolvedOwnerId });
       }
       setTitle("");
       setBody("");
@@ -289,7 +306,7 @@ export default function AdminDocuments() {
           />
           <input
             className="input"
-            placeholder="Owner user ID"
+            placeholder="Owner user ID or email"
             value={ownerId}
             onChange={(event) => setOwnerId(event.target.value)}
           />

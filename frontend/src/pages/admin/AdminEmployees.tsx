@@ -262,6 +262,9 @@ export default function AdminEmployees() {
                       entry.employment_status
                     )}`}
                   </div>
+                  <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
+                    {`User ID ${entry.id}`}
+                  </div>
                 </div>
                 <div className="row" style={{ alignItems: "center", justifyContent: "flex-end" }}>
                   <span className="pill">{entry.is_active ? "Enabled" : "Disabled"}</span>
