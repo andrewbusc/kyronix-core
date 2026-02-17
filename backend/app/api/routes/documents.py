@@ -1,7 +1,9 @@
 import secrets
+import re
 from datetime import datetime, timezone
+from mimetypes import guess_type
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
@@ -12,9 +14,21 @@ from app.db.models.document_share import DocumentShare
 from app.db.models.user import User
 from app.schemas.document import DocumentCreate, DocumentRead, DocumentShareCreate, DocumentShareRead
 from app.utils.pdf import render_document_pdf
-from app.utils.s3 import S3ConfigError, delete_pdf_bytes, download_pdf_bytes
+from app.utils.s3 import (
+    S3ConfigError,
+    delete_file_bytes,
+    download_file_bytes,
+    upload_file_bytes,
+)
 
 router = APIRouter()
+ALLOWED_UPLOAD_MIME_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
 
 
 def get_document_or_404(db: Session, doc_id: int, current_user: User) -> Document:
@@ -32,6 +46,19 @@ def normalize_datetime(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value
+
+
+def normalize_filename(filename: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", filename.strip())
+    return normalized.strip("._") or "document"
+
+
+def is_allowed_upload(upload: UploadFile) -> bool:
+    content_type = (upload.content_type or "").lower()
+    if content_type in ALLOWED_UPLOAD_MIME_TYPES:
+        return True
+    filename = (upload.filename or "").lower()
+    return any(filename.endswith(ext) for ext in ALLOWED_UPLOAD_EXTENSIONS)
 
 
 def get_share_or_404(
@@ -66,6 +93,73 @@ def create_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Owner not found")
 
     document = Document(title=payload.title, body=payload.body or "", owner_id=owner_id)
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.post("/upload", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
+def upload_document(
+    owner_id: int = Form(...),
+    title: str = Form(...),
+    body: str = Form(""),
+    file: UploadFile = File(...),
+    file_name: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleEnum.ADMIN)),
+):
+    if current_user.employment_status == EmploymentStatus.FORMER_EMPLOYEE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access")
+    if not title.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title is required")
+    if not is_allowed_upload(file):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Allowed file types: PDF, JPG, JPEG, PNG, WEBP",
+        )
+
+    owner = db.get(User, owner_id)
+    if not owner:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Owner not found")
+
+    try:
+        file_bytes = file.file.read()
+    finally:
+        file.file.close()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
+
+    original_name = file_name or file.filename or "document"
+    normalized_name = normalize_filename(original_name)
+    inferred_mime = (file.content_type or "").lower()
+    if not inferred_mime:
+        guessed, _ = guess_type(normalized_name)
+        inferred_mime = guessed or "application/octet-stream"
+
+    s3_key = (
+        f"paystubs/{owner_id}/documents/"
+        f"uploaded_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}_"
+        f"{normalized_name}"
+    )
+    try:
+        upload_file_bytes(
+            s3_key,
+            file_bytes,
+            content_type=inferred_mime,
+            metadata={"owner_id": str(owner_id), "uploaded_by": str(current_user.id)},
+        )
+    except S3ConfigError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    document = Document(
+        title=title.strip(),
+        body=body or "",
+        owner_id=owner_id,
+        s3_key=s3_key,
+        file_name=normalized_name,
+        mime_type=inferred_mime,
+    )
     db.add(document)
     db.commit()
     db.refresh(document)
@@ -119,25 +213,27 @@ def get_document_pdf(
 ):
     document = get_document_or_404(db, doc_id, current_user)
     filename = document.file_name or f"document_{document.id}.pdf"
+    media_type = document.mime_type or "application/pdf"
     if document.s3_key:
         try:
-            pdf_bytes = download_pdf_bytes(document.s3_key)
+            file_bytes = download_file_bytes(document.s3_key)
         except S3ConfigError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
             ) from exc
     else:
-        pdf_bytes = render_document_pdf(document)
+        file_bytes = render_document_pdf(document)
+        media_type = "application/pdf"
     log_document_event(
         db,
         user_id=current_user.id,
         document_id=document.id,
         event_type="document_generation",
-        metadata={"format": "pdf"},
+        metadata={"format": "file"},
     )
     return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
+        content=file_bytes,
+        media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -154,11 +250,13 @@ def delete_document(
 
     if document.s3_key:
         try:
-            delete_pdf_bytes(document.s3_key)
+            delete_file_bytes(document.s3_key)
         except S3ConfigError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
-            ) from exc
+            error_text = str(exc)
+            if "AccessDenied" not in error_text:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_text
+                ) from exc
 
     db.delete(document)
     db.commit()
@@ -257,17 +355,19 @@ def download_shared_document(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     filename = document.file_name or f"document_{document.id}.pdf"
+    media_type = document.mime_type or "application/pdf"
     if document.s3_key:
         try:
-            pdf_bytes = download_pdf_bytes(document.s3_key)
+            file_bytes = download_file_bytes(document.s3_key)
         except S3ConfigError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
             ) from exc
     else:
-        pdf_bytes = render_document_pdf(document)
+        file_bytes = render_document_pdf(document)
+        media_type = "application/pdf"
     return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
+        content=file_bytes,
+        media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

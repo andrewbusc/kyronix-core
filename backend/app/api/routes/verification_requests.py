@@ -23,9 +23,30 @@ from app.utils.employment_verification import (
     build_employment_verification_filename,
     render_employment_verification_pdf,
 )
-from app.utils.s3 import S3ConfigError, download_pdf_bytes, upload_pdf_bytes
+from app.utils.email import (
+    EmailConfigError,
+    EmailDeliveryError,
+    send_verification_email_with_attachment,
+)
+from app.utils.s3 import S3ConfigError, download_file_bytes, download_pdf_bytes, upload_pdf_bytes
 
 router = APIRouter()
+
+
+def get_latest_drivers_license_document(db: Session, employee_id: int) -> Document | None:
+    candidates = (
+        db.query(Document)
+        .filter(Document.owner_id == employee_id, Document.s3_key.isnot(None))
+        .order_by(Document.id.desc())
+        .all()
+    )
+    for document in candidates:
+        title = (document.title or "").lower()
+        file_name = (document.file_name or "").lower()
+        combined = f"{title} {file_name}"
+        if "driver" in combined and "license" in combined:
+            return document
+    return None
 
 
 def build_employee_summary(user: User) -> dict:
@@ -310,6 +331,61 @@ def mark_verification_sent(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Delivery method is set to employee documents",
         )
+    if not request.verifier_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verifier email is required for direct delivery",
+        )
+    if not request.s3_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Verification letter file is missing",
+        )
+
+    employee = db.get(User, request.employee_id)
+    if not employee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    try:
+        pdf_bytes = download_pdf_bytes(request.s3_key)
+    except S3ConfigError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    file_name = request.file_name or "employment_verification.pdf"
+    employee_name = f"{employee.legal_first_name} {employee.legal_last_name}"
+    extra_attachments: list[tuple[str, bytes, str | None]] = []
+    drivers_license_document = get_latest_drivers_license_document(db, employee.id)
+    if drivers_license_document and drivers_license_document.s3_key:
+        try:
+            drivers_license_bytes = download_file_bytes(drivers_license_document.s3_key)
+        except S3ConfigError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        if drivers_license_bytes:
+            drivers_license_name = (
+                drivers_license_document.file_name
+                or f"drivers_license_employee_{employee.id}"
+            )
+            extra_attachments.append(
+                (
+                    drivers_license_name,
+                    drivers_license_bytes,
+                    drivers_license_document.mime_type,
+                )
+            )
+
+    try:
+        send_verification_email_with_attachment(
+            recipient_email=request.verifier_email,
+            recipient_name=request.verifier_name,
+            employee_name=employee_name,
+            attachment_filename=file_name,
+            attachment_bytes=pdf_bytes,
+            extra_attachments=extra_attachments,
+        )
+    except EmailConfigError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    except EmailDeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     request.status = VerificationRequestStatus.SENT
     request.sent_at = datetime.now(timezone.utc)
@@ -323,10 +399,14 @@ def mark_verification_sent(
         user_id=current_user.id,
         request_id=request.id,
         event_type="verification_sent",
-        metadata={"verifier_email": request.verifier_email, "sent_note": request.sent_note},
+        metadata={
+            "verifier_email": request.verifier_email,
+            "sent_note": request.sent_note,
+            "delivery": "email_with_pdf_attachment",
+            "included_drivers_license": bool(extra_attachments),
+        },
     )
 
-    employee = db.get(User, request.employee_id)
     return serialize_request(request, employee)
 
 

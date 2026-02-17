@@ -29,33 +29,56 @@ def get_s3_client():
     return boto3.client("s3", **_build_client_kwargs())
 
 
-def upload_pdf_bytes(key: str, content: bytes, metadata: dict | None = None) -> None:
+def upload_file_bytes(
+    key: str,
+    content: bytes,
+    *,
+    content_type: str = "application/octet-stream",
+    metadata: dict | None = None,
+) -> None:
     client = get_s3_client()
     try:
         client.put_object(
             Bucket=settings.s3_bucket,
             Key=key,
             Body=content,
-            ContentType="application/pdf",
+            ContentType=content_type,
             Metadata=metadata or {},
         )
     except ClientError as exc:
-        raise S3ConfigError(f"Failed to upload PDF to S3: {exc}") from exc
+        raise S3ConfigError(f"Failed to upload file to S3: {exc}") from exc
 
 
-def download_pdf_bytes(key: str) -> bytes:
+def download_file_bytes(key: str) -> bytes:
     client = get_s3_client()
     try:
         response = client.get_object(Bucket=settings.s3_bucket, Key=key)
         body = response.get("Body")
         return body.read() if body else b""
     except ClientError as exc:
-        raise S3ConfigError(f"Failed to download PDF from S3: {exc}") from exc
+        raise S3ConfigError(f"Failed to download file from S3: {exc}") from exc
 
 
-def delete_pdf_bytes(key: str) -> None:
+def delete_file_bytes(key: str) -> None:
     client = get_s3_client()
     try:
         client.delete_object(Bucket=settings.s3_bucket, Key=key)
     except ClientError as exc:
-        raise S3ConfigError(f"Failed to delete PDF from S3: {exc}") from exc
+        raise S3ConfigError(f"Failed to delete file from S3: {exc}") from exc
+
+
+def upload_pdf_bytes(key: str, content: bytes, metadata: dict | None = None) -> None:
+    upload_file_bytes(
+        key,
+        content,
+        content_type="application/pdf",
+        metadata=metadata,
+    )
+
+
+def download_pdf_bytes(key: str) -> bytes:
+    return download_file_bytes(key)
+
+
+def delete_pdf_bytes(key: str) -> None:
+    delete_file_bytes(key)

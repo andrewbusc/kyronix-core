@@ -14,6 +14,8 @@ type Document = {
   id: number;
   title: string;
   body: string;
+  file_name?: string | null;
+  mime_type?: string | null;
   owner_id: number;
 };
 
@@ -50,7 +52,7 @@ function getSafeFileName(title: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
-  return normalized ? `${normalized}.pdf` : "document.pdf";
+  return normalized ? `${normalized}.dat` : "document.dat";
 }
 
 export default function Documents() {
@@ -272,7 +274,8 @@ export default function Documents() {
                 setVerificationForm({ ...verificationForm, consent: event.target.checked })
               }
             />
-            I authorize Kyronix LLC to share my employment details with the verifier above.
+            I authorize Northline Premier (formerly Kyronix LLC) to share my employment details
+            with the verifier above.
           </label>
           <label className="row" style={{ gap: 10 }}>
             Preferred delivery
@@ -374,7 +377,7 @@ export default function Documents() {
           <div>
             <h2 style={{ margin: 0 }}>Documents</h2>
             <p style={{ marginTop: 6, color: "rgba(11, 31, 42, 0.6)" }}>
-              All documents are provided as PDF files.
+              Documents can include PDFs and image scans.
             </p>
           </div>
           <button className="button secondary" onClick={refreshDocuments}>
@@ -393,7 +396,7 @@ export default function Documents() {
                   <div>
                     <strong>{doc.title}</strong>
                     <div style={{ fontSize: "0.85rem", color: "rgba(11, 31, 42, 0.6)" }}>
-                      PDF ready for download
+                      File ready for download
                     </div>
                   </div>
                   <div className="row">
@@ -401,7 +404,7 @@ export default function Documents() {
                       Open
                     </button>
                     <button className="button" onClick={() => handleDownload(doc)}>
-                      Download PDF
+                      Download file
                     </button>
                     <button className="button secondary" onClick={() => handleDelete(doc)}>
                       Delete

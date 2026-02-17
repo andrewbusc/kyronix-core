@@ -13,6 +13,8 @@ class DocumentRead(BaseModel):
     id: int
     title: str
     body: str
+    file_name: str | None = None
+    mime_type: str | None = None
     owner_id: int
     created_at: datetime | None = None
     updated_at: datetime | None = None

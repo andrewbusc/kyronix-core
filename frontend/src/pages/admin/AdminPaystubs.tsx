@@ -271,7 +271,7 @@ export default function AdminPaystubs() {
   const [companyAddress, setCompanyAddress] = useState(
     "28 Geary St Suite 650 San Francisco, CA 94108"
   );
-  const [payrollEmail, setPayrollEmail] = useState("hr@kyronix.ai");
+  const [payrollEmail, setPayrollEmail] = useState("hr@northlinepremier.com");
   const [companyLogoUrl, setCompanyLogoUrl] = useState(() => {
     if (typeof window === "undefined") {
       return "";

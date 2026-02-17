@@ -8,12 +8,15 @@ import {
   listDocuments,
   listDocumentShares,
   revokeDocumentShare,
+  uploadDocument,
 } from "../../api/client";
 
 type Document = {
   id: number;
   title: string;
   body: string;
+  file_name?: string | null;
+  mime_type?: string | null;
   owner_id: number;
 };
 
@@ -37,6 +40,8 @@ export default function AdminDocuments() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [ownerId, setOwnerId] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   const refreshDocuments = async () => {
     setError(null);
@@ -94,10 +99,22 @@ export default function AdminDocuments() {
     }
     setError(null);
     try {
-      await createDocument({ title, body, owner_id: Number(ownerId) });
+      if (uploadFile) {
+        await uploadDocument({
+          title,
+          body,
+          owner_id: Number(ownerId),
+          file: uploadFile,
+          file_name: fileName || null,
+        });
+      } else {
+        await createDocument({ title, body, owner_id: Number(ownerId) });
+      }
       setTitle("");
       setBody("");
       setOwnerId("");
+      setFileName("");
+      setUploadFile(null);
       await refreshDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create document");
@@ -154,7 +171,7 @@ export default function AdminDocuments() {
           <div>
             <h2 style={{ margin: 0 }}>Documents</h2>
             <p style={{ marginTop: 6, color: "rgba(11, 31, 42, 0.6)" }}>
-              Documents are delivered as PDFs.
+              Documents can be text PDFs or uploaded scan files.
             </p>
           </div>
           <button className="button secondary" onClick={refreshDocuments}>
@@ -276,8 +293,20 @@ export default function AdminDocuments() {
             value={ownerId}
             onChange={(event) => setOwnerId(event.target.value)}
           />
+          <input
+            className="input"
+            placeholder="File name override (optional)"
+            value={fileName}
+            onChange={(event) => setFileName(event.target.value)}
+          />
+          <input
+            className="input"
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+          />
           <button className="button" onClick={handleCreate}>
-            Create document
+            {uploadFile ? "Upload document file" : "Create document"}
           </button>
         </div>
       </div>

@@ -91,6 +91,28 @@ export async function createDocument(payload: { title: string; body: string; own
   return response.json();
 }
 
+export async function uploadDocument(payload: {
+  title: string;
+  body?: string;
+  owner_id: number;
+  file: File;
+  file_name?: string | null;
+}) {
+  const form = new FormData();
+  form.set("title", payload.title);
+  form.set("owner_id", String(payload.owner_id));
+  form.set("body", payload.body || "");
+  form.set("file", payload.file);
+  if (payload.file_name) {
+    form.set("file_name", payload.file_name);
+  }
+  const response = await apiRequest("/api/documents/upload", {
+    method: "POST",
+    body: form,
+  });
+  return response.json();
+}
+
 export async function getDocument(docId: number) {
   const response = await apiRequest(`/api/documents/${docId}`);
   return response.json();
