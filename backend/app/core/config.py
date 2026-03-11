@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Debug: Print all environment variables
 print("DEBUG: All environment variables:", file=sys.stderr)
 for key, value in os.environ.items():
-    if 'DATABASE' in key or 'POSTGRES' in key:
+    if 'DATABASE' in key or 'POSTGRES' in key or 'PG' in key:
         print(f"  {key} = {value[:50] if value else 'EMPTY'}...", file=sys.stderr)
 
 
