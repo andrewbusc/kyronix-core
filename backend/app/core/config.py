@@ -1,5 +1,9 @@
 import os
+import sys
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Debug: Print DATABASE_URL to see what Railway is providing
+print(f"DEBUG: DATABASE_URL from env = {os.getenv('DATABASE_URL', 'NOT SET')}", file=sys.stderr)
 
 
 class Settings(BaseSettings):
