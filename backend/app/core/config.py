@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,7 +29,7 @@ class Settings(BaseSettings):
     verification_body_font_path: str | None = None
     verification_signature_font_path: str | None = None
 
-    database_url: str = "postgresql+psycopg2://kyronix:kyronix@db:5432/kyronix_core"
+    database_url: str = os.getenv("DATABASE_URL", "postgresql+psycopg2://kyronix:kyronix@db:5432/kyronix_core")
     secret_key: str = "change-me"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
