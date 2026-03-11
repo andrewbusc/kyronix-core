@@ -1,0 +1,74 @@
+[
+  {
+    "filename": "KYRONIX_PAYSTUB_MANALO_20251219.pdf",
+    "pay_date": "2025-12-19",
+    "pay_period_start": "2025-12-01",
+    "pay_period_end": "2025-12-14",
+    "gross_pay_current": "7292.31",
+    "total_deductions_current": "2813.47",
+    "net_pay_current": "4478.84",
+    "gross_pay_ytd": "7292.31",
+    "total_deductions_ytd": "2813.47",
+    "net_pay_ytd": "4478.84"
+  },
+  {
+    "filename": "KYRONIX_PAYSTUB_MANALO_20260102.pdf",
+    "pay_date": "2026-01-02",
+    "pay_period_start": "2025-12-15",
+    "pay_period_end": "2025-12-28",
+    "gross_pay_current": "7292.31",
+    "total_deductions_current": "2813.47",
+    "net_pay_current": "4478.84",
+    "gross_pay_ytd": "7292.31",
+    "total_deductions_ytd": "2813.47",
+    "net_pay_ytd": "4478.84"
+  },
+  {
+    "filename": "KYRONIX_PAYSTUB_MANALO_20260116.pdf",
+    "pay_date": "2026-01-16",
+    "pay_period_start": "2025-12-29",
+    "pay_period_end": "2026-01-11",
+    "gross_pay_current": "7292.31",
+    "total_deductions_current": "2838.85",
+    "net_pay_current": "4453.46",
+    "gross_pay_ytd": "14584.62",
+    "total_deductions_ytd": "5652.32",
+    "net_pay_ytd": "8932.30"
+  },
+  {
+    "filename": "KYRONIX_PAYSTUB_MANALO_20260130.pdf",
+    "pay_date": "2026-01-30",
+    "pay_period_start": "2026-01-12",
+    "pay_period_end": "2026-01-25",
+    "gross_pay_current": "7292.31",
+    "total_deductions_current": "2881.55",
+    "net_pay_current": "4410.76",
+    "gross_pay_ytd": "21876.93",
+    "total_deductions_ytd": "8533.87",
+    "net_pay_ytd": "13343.06"
+  },
+  {
+    "filename": "KYRONIX_PAYSTUB_MANALO_20260213.pdf",
+    "pay_date": "2026-02-13",
+    "pay_period_start": "2026-01-26",
+    "pay_period_end": "2026-02-08",
+    "gross_pay_current": "7292.31",
+    "total_deductions_current": "2900.97",
+    "net_pay_current": "4391.34",
+    "gross_pay_ytd": "29169.24",
+    "total_deductions_ytd": "11434.84",
+    "net_pay_ytd": "17734.40"
+  },
+  {
+    "filename": "KYRONIX_PAYSTUB_MANALO_20260227.pdf",
+    "pay_date": "2026-02-27",
+    "pay_period_start": "2026-02-09",
+    "pay_period_end": "2026-02-22",
+    "gross_pay_current": "7292.31",
+    "total_deductions_current": "3017.73",
+    "net_pay_current": "4274.58",
+    "gross_pay_ytd": "36461.55",
+    "total_deductions_ytd": "14452.57",
+    "net_pay_ytd": "22008.98"
+  }
+]

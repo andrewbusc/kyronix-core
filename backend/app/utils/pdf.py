@@ -1,11 +1,18 @@
 import io
+import re
 from datetime import datetime, timezone
+from html import escape
 from zoneinfo import ZoneInfo
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from app.core.config import settings
+
+try:
+    from fpdf import FPDF
+except Exception:  # pragma: no cover - fallback handled at runtime
+    FPDF = None
 
 
 def draw_paystub_style_footer(
@@ -36,7 +43,71 @@ def draw_paystub_style_footer(
     c.drawString(margin, footer_height - 28, f"Generated on: {stamp}")
 
 
-def render_document_pdf(document) -> bytes:
+def _looks_like_html(content: str) -> bool:
+    return bool(re.search(r"<[A-Za-z][^>]*>", content))
+
+
+def _to_latin1_safe(value: str) -> str:
+    replacements = {
+        "\u2014": "-",
+        "\u2013": "-",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2022": "*",
+    }
+    result = value or ""
+    for source, target in replacements.items():
+        result = result.replace(source, target)
+    return result.encode("latin-1", "replace").decode("latin-1")
+
+
+def _document_body_to_html(body: str) -> str:
+    clean_body = _to_latin1_safe((body or "").strip())
+    if not clean_body:
+        return "<p>No content provided.</p>"
+    if _looks_like_html(clean_body):
+        return clean_body
+
+    paragraphs = []
+    for block in clean_body.split("\n\n"):
+        block_lines = block.splitlines() or [""]
+        content = "<br/>".join(escape(line) for line in block_lines)
+        paragraphs.append(f"<p>{content}</p>")
+    return "\n".join(paragraphs)
+
+
+def _render_document_pdf_html(document) -> bytes:
+    if FPDF is None:
+        raise RuntimeError("fpdf2 is not installed")
+
+    now = datetime.now(ZoneInfo(settings.time_zone))
+    generated_from = _to_latin1_safe(settings.base_url.strip() or "Kyronix Core")
+    body_html = _document_body_to_html(document.body or "")
+    html = f"""
+<h1>{escape(_to_latin1_safe(settings.project_name))}</h1>
+<p><b>Employer:</b> {escape(_to_latin1_safe(settings.employer_legal_name))}<br/>
+<b>Document ID:</b> {document.id}<br/>
+<b>Generated:</b> {escape(_to_latin1_safe(now.isoformat()))}</p>
+<hr/>
+<h2>{escape(_to_latin1_safe(document.title or "Document"))}</h2>
+{body_html}
+<hr/>
+<p><font color="#55606D">This document was generated electronically via {escape(generated_from)}.</font></p>
+"""
+
+    pdf = FPDF(orientation="P", unit="pt", format="Letter")
+    pdf.set_title(_to_latin1_safe(f"{settings.project_name} Document"))
+    pdf.set_author(_to_latin1_safe(settings.employer_legal_name))
+    pdf.set_auto_page_break(auto=True, margin=54)
+    pdf.set_margins(54, 54, 54)
+    pdf.add_page()
+    pdf.write_html(html)
+    return bytes(pdf.output(dest="S"))
+
+
+def _render_document_pdf_reportlab(document) -> bytes:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     c.setTitle(f"{settings.project_name} Document")
@@ -68,6 +139,13 @@ def render_document_pdf(document) -> bytes:
 
     buffer.seek(0)
     return buffer.read()
+
+
+def render_document_pdf(document) -> bytes:
+    try:
+        return _render_document_pdf_html(document)
+    except Exception:
+        return _render_document_pdf_reportlab(document)
 
 
 def render_paystub_pdf(paystub) -> bytes:
