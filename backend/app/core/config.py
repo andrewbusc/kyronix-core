@@ -2,8 +2,11 @@ import os
 import sys
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Debug: Print DATABASE_URL to see what Railway is providing
-print(f"DEBUG: DATABASE_URL from env = {os.getenv('DATABASE_URL', 'NOT SET')}", file=sys.stderr)
+# Debug: Print all environment variables
+print("DEBUG: All environment variables:", file=sys.stderr)
+for key, value in os.environ.items():
+    if 'DATABASE' in key or 'POSTGRES' in key:
+        print(f"  {key} = {value[:50] if value else 'EMPTY'}...", file=sys.stderr)
 
 
 class Settings(BaseSettings):
